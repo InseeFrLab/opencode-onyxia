@@ -168,6 +168,11 @@
       "headers": {
         "Authorization": "Bearer {env:EXCALIDRAW_API_KEY}"
       }
+    },
+    "datagouv": {
+      "type": "remote",
+      "url": "https://mcp.data.gouv.fr/mcp",
+      "enabled": false
     }
   },
 
