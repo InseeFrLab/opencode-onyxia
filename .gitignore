@@ -1,0 +1,42 @@
+# --- Secrets / variables d'environnement (NE JAMAIS COMMITER) ---
+.env
+*.env
+*.key
+secrets.*
+
+# --- État local OpenCode (les skills/agents/config RESTENT versionnés) ---
+.opencode/cache/
+.opencode/logs/
+.opencode/auth.json
+.opencode/state/
+
+# --- Python ---
+__pycache__/
+*.py[cod]
+.venv/
+.ipynb_checkpoints/
+.ruff_cache/
+.pytest_cache/
+.mypy_cache/
+
+# --- R ---
+.Rproj.user/
+.Rhistory
+.RData
+.Ruserdata
+renv/library/
+renv/staging/
+
+# --- Données & artefacts lourds (à stocker sur S3, pas dans Git) ---
+data/
+*.parquet
+*.csv
+*.tsv
+*.rds
+*.pkl
+mlruns/
+
+# --- Système / éditeurs ---
+.DS_Store
+Thumbs.db
+*.swp

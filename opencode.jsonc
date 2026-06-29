@@ -1,0 +1,175 @@
+{
+  "$schema": "https://opencode.ai/config.json",
+
+  // =========================================================================
+  //  FOURNISSEUR : modèles auto-hébergés exposés par la plateforme Onyxia.
+  //  La passerelle est Open WebUI (https://llm.lab.sspcloud.fr) : elle expose une
+  //  couche OpenAI-compatible sur /v1 (distincte de l'API native /api).
+  //
+  //  baseURL attendue par OpenCode :  https://llm.lab.sspcloud.fr/v1
+  //    -> OpenCode appelle {baseURL}/chat/completions = /v1/chat/completions
+  //    -> Repli si /v1 absent : https://llm.lab.sspcloud.fr/api  (cf. INSTALL.md)
+  //
+  //  Les CLES de "models" ci-dessous sont confirmées (curl .../api/models) :
+  //  gemma4-26b-moe, qwen3-6-35b-moe, qwen3-vl. Les "limit" restent des
+  //  estimations : ajustez-les au déploiement réel.
+  // =========================================================================
+  "provider": {
+    "onyxia": {
+      "npm": "@ai-sdk/openai-compatible",
+      "name": "SSPCloud LLM (auto-hébergé)",
+      "options": {
+        "baseURL": "{env:OPENAI_BASE_URL}",
+        "apiKey": "{env:OPENAI_API_KEY}"
+      },
+      "models": {
+        "qwen3-6-35b-moe": {
+          "name": "Qwen3 35B MoE — code & raisonnement",
+          "tools": true,
+          "limit": { "context": 131072, "output": 32768 }
+        },
+        "gemma4-26b-moe": {
+          "name": "Gemma 4 26B MoE — rapide / planification",
+          "tools": true,
+          "limit": { "context": 131072, "output": 16384 }
+        },
+        "qwen3-vl": {
+          "name": "Qwen3 VL — vision (graphiques, schémas, captures)",
+          "tools": true,
+          "limit": { "context": 65536, "output": 16384 }
+        }
+      }
+    }
+  },
+
+  // ---- Modèle par défaut + petit modèle (titres, résumés, compaction) ----
+  "model": "onyxia/qwen3-6-35b-moe",
+  "small_model": "onyxia/gemma4-26b-moe",
+
+  // ---- Agent par défaut au lancement ----
+  "default_agent": "plan",
+
+  // =========================================================================
+  //  PERMISSIONS — OpenCode n'est PAS sandboxé : tout `bash` s'exécute sur le pod.
+  //  On autorise largement l'outillage data science usuel, on demande
+  //  confirmation pour tout ce qui est destructif ou sortant (réseau, k8s, rm).
+  // =========================================================================
+  "permission": {
+    "edit": "allow",
+    "webfetch": "ask",
+    "bash": {
+      "git *": "allow",
+      "uv *": "allow",
+      "pip *": "allow",
+      "pixi *": "allow",
+      "python *": "allow",
+      "python3 *": "allow",
+      "pytest*": "allow",
+      "ruff *": "allow",
+      "mypy *": "allow",
+      "Rscript *": "allow",
+      "R -e *": "allow",
+      "quarto *": "allow",
+      "make *": "allow",
+      "mc *": "allow",
+      "aws s3*": "allow",
+      "mlflow *": "allow",
+      "argo *": "allow",
+      "kubectl get*": "allow",
+      "kubectl describe*": "allow",
+      "kubectl logs*": "allow",
+      "kubectl apply*": "ask",
+      "kubectl delete*": "ask",
+      "docker *": "ask",
+      "rm *": "ask",
+      "curl *": "ask",
+      "wget *": "ask",
+      "*": "ask"
+    },
+    "skill": { "*": "allow" }
+  },
+
+  // =========================================================================
+  //  AGENTS — 2 agents principaux (Tab pour basculer) + 5 sous-agents
+  //  délégués automatiquement selon leur "description", ou appelés via @nom.
+  //  Le prompt système de chaque agent est dans ./prompts/<agent>.md
+  // =========================================================================
+  "agent": {
+    "build": {
+      "mode": "primary",
+      "model": "onyxia/qwen3-6-35b-moe",
+      "temperature": 0.2,
+      "prompt": "./prompts/build.md"
+    },
+
+    "plan": {
+      "mode": "primary",
+      "model": "onyxia/gemma4-26b-moe",
+      "temperature": 0.1,
+      "prompt": "./prompts/plan.md",
+      "tools": { "write": false, "edit": false },
+      "permission": { "bash": { "*": "ask" } }
+    },
+
+    "python-ds": {
+      "mode": "subagent",
+      "description": "Spécialiste Python data science / ML sur Onyxia (uv, ruff, polars, pandas, scikit-learn, pyarrow, s3fs). À utiliser pour écrire ou refactorer du code Python d'analyse, de modélisation ou de pipeline.",
+      "model": "onyxia/qwen3-6-35b-moe",
+      "temperature": 0.2,
+      "prompt": "./prompts/python-ds.md"
+    },
+
+    "r-ds": {
+      "mode": "subagent",
+      "description": "Spécialiste R data science (tidyverse, data.table, targets, renv, testthat, aws.s3, arrow). À utiliser pour tout code R d'analyse, de modélisation ou de pipeline reproductible.",
+      "model": "onyxia/qwen3-6-35b-moe",
+      "temperature": 0.2,
+      "prompt": "./prompts/r-ds.md"
+    },
+
+    "mlops": {
+      "mode": "subagent",
+      "description": "Ingénieur MLOps Onyxia : suivi d'expériences MLflow, parallélisation de l'entraînement via Argo Workflows, déploiement GitOps via ArgoCD, packaging et mise en production de modèles. À utiliser pour industrialiser/déployer un modèle.",
+      "model": "onyxia/qwen3-6-35b-moe",
+      "temperature": 0.2,
+      "prompt": "./prompts/mlops.md"
+    },
+
+    "reviewer": {
+      "mode": "subagent",
+      "description": "Relecteur de code en lecture seule : qualité, reproductibilité, sécurité (aucun secret en dur), bonnes pratiques R/Python. À utiliser pour relire un diff ou un module avant un commit.",
+      "model": "onyxia/gemma4-26b-moe",
+      "temperature": 0.1,
+      "prompt": "./prompts/reviewer.md",
+      "tools": { "write": false, "edit": false, "bash": false }
+    },
+
+    "dataviz-vision": {
+      "mode": "subagent",
+      "description": "Analyse visuelle (modèle vision) : lit des captures d'écran, graphiques matplotlib/ggplot, diagrammes d'architecture ou tableaux de bord pour les interpréter ou suggérer des améliorations. À utiliser quand une image est fournie.",
+      "model": "onyxia/qwen3-vl",
+      "temperature": 0.3,
+      "prompt": "./prompts/dataviz-vision.md",
+      "tools": { "write": false, "edit": false }
+    }
+  },
+
+  // =========================================================================
+  //  MCP (optionnel) — désactivé par défaut.
+  //  Attention : un serveur MCP "local" exécute une commande sur le pod ;
+  //  un serveur "remote" envoie du contexte hors de la plateforme.
+  //  À n'activer qu'en connaissance de cause (confidentialité des données Insee).
+  // =========================================================================
+  "mcp": {
+     "excalidraw": {
+      "type": "remote",
+      "url": "https://api.excalidraw.com/api/v1/mcp",
+      "enabled": false,
+      "headers": {
+        "Authorization": "Bearer {env:EXCALIDRAW_API_KEY}"
+      }
+    }
+  },
+
+  "autoupdate": "notify"
+}
