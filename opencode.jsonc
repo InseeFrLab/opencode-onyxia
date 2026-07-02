@@ -119,7 +119,7 @@
 
     "plan": {
       "mode": "primary",
-      "model": "onyxia/gemma4-26b-moe",
+      "model": "onyxia/qwen3-6-35b-moe",
       "temperature": 0.1,
       "prompt": "./prompts/plan.md",
       "tools": { "write": false, "edit": false },
