@@ -1,6 +1,6 @@
 ---
 name: r-datascience
-description: Standards de projet R data science sur Onyxia, alignés sur la documentation utilitR de l'Insee — qualité du code (lintr, styler, fonctions, notation package::fonction), structure de projet (projets RStudio, sous-dossiers, README), pipelines targets, Parquet via arrow/duckdb, accès S3 via aws.s3/arrow, modélisation tidymodels. À charger pour créer/structurer un projet R, écrire un pipeline R, ou produire du code R propre.
+description: Standards de projet R data science sur Onyxia, alignés sur la documentation utilitR de l'Insee — qualité du code (lintr, styler, fonctions, notation package::fonction), structure de projet (projets RStudio, sous-dossiers, README), environnement figé renv, pipelines targets, Parquet via arrow/duckdb, accès S3 via aws.s3/arrow, modélisation tidymodels. À charger pour créer/structurer un projet R, écrire un pipeline R, produire du code R propre, ou dès que la tâche mentionne renv.lock, targets, .Rproj, lintr, styler ou tidymodels.
 license: MIT
 ---
 
@@ -39,9 +39,17 @@ projet/
 - **Noms de fichiers signifiants**, **sans espace ni accent** (sources d'erreurs).
 - Données volumineuses sur S3, pas dans Git (skill `onyxia-storage-s3`).
 
+## Environnement figé — renv
+`renv::init()` au démarrage du projet, `renv::snapshot()` après chaque ajout de
+package : `renv.lock` est commité (jamais `renv/library/`), `renv::restore()`
+reconstitue l'environnement à l'identique.
+
 ## Chaîne de traitement reproductible — targets
 `targets` matérialise le pipeline en graphe de dépendances ; seules les étapes
 impactées sont recalculées (`_targets.R`, `tar_make()`, `tar_visnetwork()`).
+À réserver aux pipelines qui le justifient (plusieurs étapes coûteuses,
+dépendances non triviales) — pour un enchaînement simple, des scripts numérotés
+suffisent.
 
 ## Données : Parquet via arrow / duckdb
 utilitR recommande `arrow` (et `duckdb`) pour le Parquet, y compris sur S3 et en
@@ -58,6 +66,8 @@ fit  <- fit(wf, data = train)
 ```
 Suivre les essais via le package `mlflow` (skill `mlflow-tracking`).
 
-## Référence
+## Références
 - book.utilitr.org (notamment « Qualité du code » et « Structure des projets »)
 - Formation Insee bonnes pratiques R : inseefrlab.github.io/formation-bonnes-pratiques-git-R
+- Workflow Git (`.gitignore`, commits, PR) : skill `git-workflow-ds` ;
+  restitution `.qmd` : skill `quarto-publication`.

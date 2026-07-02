@@ -20,7 +20,10 @@ opencode-onyxia/
     ├── argo-mlops/SKILL.md
     ├── python-datascience/SKILL.md
     ├── r-datascience/SKILL.md
-    └── reproductibilite-onyxia/SKILL.md
+    ├── reproductibilite-onyxia/SKILL.md
+    ├── quarto-publication/SKILL.md
+    ├── vault-secrets-onyxia/SKILL.md
+    └── git-workflow-ds/SKILL.md
 ```
 
 ## Installation (résumé — guide détaillé dans `INSTALL.md`)
@@ -68,14 +71,13 @@ opencode-onyxia/
 | `qwen3-6-35b-moe` | modèle par défaut — code, raisonnement, agents `build`/`python-ds`/`r-ds`/`mlops` |
 | `gemma4-26b-moe` | `small_model` (titres, résumés) + agents `plan` et `reviewer` (diversité de point de vue) |
 | `qwen3-vl` | agent `dataviz-vision` — lecture de graphiques, schémas, captures |
-| `qwen3-embedding-8b` | **embeddings** — voir ci-dessous |
 
-### Embeddings (`qwen3-embedding-8b`)
-Ce n'est pas un modèle de chat : il ne peut pas piloter un agent. Il sert à la
-**recherche sémantique / RAG** (indexer une base de code ou de documentation
-méthodologique et retrouver les passages pertinents). Pour l'exploiter, le brancher
-derrière un outil ou un serveur MCP de recherche (clé `mcp` de `opencode.jsonc`)
-pointant sur l'endpoint d'embeddings — à activer seulement si un cas d'usage le justifie.
+
+## Serveurs MCP livrés (désactivés par défaut)
+Deux serveurs `remote` sont pré-déclarés dans `opencode.jsonc` avec
+`"enabled": false` : **excalidraw** (diagrammes, nécessite `EXCALIDRAW_API_KEY`)
+et **datagouv** (données publiques data.gouv.fr). Activation et précautions de
+confidentialité : voir `INSTALL.md`.
 
 ## Sécurité / confidentialité
 - OpenCode n'est pas sandboxé : les commandes `bash` s'exécutent réellement sur le pod.

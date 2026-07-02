@@ -49,12 +49,17 @@ spec:
                "--lr", "{{inputs.parameters.lr}}",
                "--experiment", "{{workflow.parameters.experiment}}"]
         env:
-          - { name: MLFLOW_TRACKING_URI, value: "https://<service-mlflow>.user.lab.sspcloud.fr" }
+          # URL auto-générée du service MLflow du catalogue (= $MLFLOW_TRACKING_URI)
+          - { name: MLFLOW_TRACKING_URI, value: "https://user-<namespace>-<id>.user.lab.sspcloud.fr" }
           # les secrets S3/MLflow proviennent d'un Secret monté, pas du YAML en clair
 ```
 Lancer / suivre :
 ```bash
-kubernetes apply -f workflow.yml
+argo submit workflow.yml --watch      # soumettre et suivre l'exécution
+argo list                             # workflows en cours / terminés
+argo logs @latest -f                  # logs du dernier workflow
+# alternative sans CLI argo : kubectl create -f workflow.yml
+# (create, pas apply : `generateName` est incompatible avec apply)
 ```
 Chaque conteneur logge son run dans MLflow ; on compare ensuite les runs dans l'UI.
 
@@ -79,18 +84,23 @@ spec:
           image: inseefrlab/<image-api>:main
           imagePullPolicy: Always
           env:
-            - { name: MLFLOW_TRACKING_URI, value: "https://<service-mlflow>.user.lab.sspcloud.fr" }
+            - { name: MLFLOW_TRACKING_URI, value: "https://user-<namespace>-<id>.user.lab.sspcloud.fr" }
             - { name: MLFLOW_MODEL_NAME,   value: "mon_modele" }
             - { name: MLFLOW_MODEL_VERSION, value: "1" }
 ```
-+ un `Ingress` exposant l'API en `https://<prenom>-<nom>-api.lab.sspcloud.fr`.
++ un `Ingress` exposant l'API en `https://<prenom>-<nom>-api.lab.sspcloud.fr` :
+hostname **choisi librement** sous le wildcard `*.lab.sspcloud.fr` (Ingress
+custom), à distinguer des URLs auto-générées `user-<namespace>-<id>.user.lab.sspcloud.fr`
+des services du catalogue.
 
 GitOps : on commite/pousse les manifestes ; **ArgoCD** synchronise automatiquement
 le cluster sur l'état du dépôt (sync auto en ~5 min ou sync forcée). L'API charge
 sa version de modèle depuis le registre MLflow au démarrage.
 
 ## 4. Au-delà : maintien en condition opérationnelle
-- Logs métier exposés par l'API → pipeline ETL (cron job) qui les stocke en Parquet sur S3.
+- Logs métier exposés par l'API → pipeline ETL planifié (un **`CronWorkflow`**
+  Argo : même spec qu'un `Workflow` + champ `schedule` cron) qui les stocke en
+  Parquet sur S3.
 - Tableau de bord (Quarto Dashboards, Grafana, Superset) pour suivre l'usage et
   détecter une dérive des données / de la performance.
 - Itérer : nouvelle version de modèle → nouvelle version d'image → ArgoCD redéploie,

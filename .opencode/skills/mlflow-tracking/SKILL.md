@@ -1,6 +1,6 @@
 ---
 name: mlflow-tracking
-description: Suivre des expériences et gérer des modèles avec l'instance MLflow partagée d'Onyxia/SSP Cloud — logging de paramètres/métriques/artefacts, autolog, registre de modèles et chargement, en Python et en R. À charger dès qu'on entraîne un modèle, compare des runs, parle de tracking, d'expériences ou de registre de modèles.
+description: Suivre des expériences et gérer des modèles avec l'instance MLflow partagée d'Onyxia/SSP Cloud — logging de paramètres/métriques/artefacts, autolog, signature de modèle, comparaison programmatique des runs (search_runs), registre de modèles et chargement, en Python et en R. À charger dès qu'on entraîne un modèle, compare des runs, ou que la tâche mentionne tracking, expérience, MLFLOW_TRACKING_URI, registre ou versionnage de modèles.
 license: MIT
 ---
 
@@ -22,14 +22,18 @@ MLflow (forme `https://user-<namespace>-<id>.user.lab.sspcloud.fr`).
 ## Python — logging manuel
 ```python
 import mlflow
+from mlflow.models import infer_signature
 
 with mlflow.start_run(run_name="rf-baseline"):
     mlflow.log_params({"n_estimators": 200, "max_depth": 8})
     # ... entraînement ...
     mlflow.log_metric("f1", f1)
     mlflow.log_metric("roc_auc", auc)
+    # signature + input_example : schéma d'entrée/sortie vérifié au chargement
     mlflow.sklearn.log_model(model, artifact_path="model",
-                             registered_model_name="mon_modele")
+                             registered_model_name="mon_modele",
+                             signature=infer_signature(X_train, model.predict(X_train)),
+                             input_example=X_train.head(3))
     mlflow.log_artifact("figures/confusion_matrix.png")
 ```
 
@@ -40,6 +44,15 @@ mlflow.sklearn.autolog()      # ou xgboost / lightgbm / pytorch / keras
 mlflow.set_experiment("nom-du-projet")
 with mlflow.start_run():
     model.fit(X_train, y_train)   # params, métriques et modèle loggés tout seuls
+```
+
+## Python — comparer des runs programmatiquement
+```python
+import mlflow
+runs = mlflow.search_runs(experiment_names=["nom-du-projet"],
+                          order_by=["metrics.f1 DESC"], max_results=10)
+best = runs.iloc[0]          # DataFrame pandas : run_id, params.*, metrics.*
+print(best["run_id"], best["metrics.f1"])
 ```
 
 ## Registre de modèles : promouvoir et charger
@@ -54,6 +67,9 @@ Versionner explicitement (alias `@champion`/`@production`) plutôt que de rééc
 une version ; garder la traçabilité données → run → modèle déployé.
 
 ## R — package mlflow
+Le support R est plus limité que le support Python (pas d'autolog, API de
+registre réduite) : pour un usage avancé, privilégier l'UI MLflow ou un script
+Python d'appoint.
 ```r
 library(mlflow)
 mlflow_set_experiment("nom-du-projet")
@@ -65,12 +81,19 @@ with(mlflow_start_run(), {
 })
 ```
 
+## Diagnostic / erreurs fréquentes
+- `MLFLOW_TRACKING_URI` absente → aucun service MLflow ne tournait à la création
+  du service courant : lancer MLflow depuis le catalogue puis relancer le service,
+  ou pointer manuellement vers son URL.
+- `403 AccessDenied` à l'écriture d'un artefact → jeton S3 expiré (7 jours),
+  cf. skill `onyxia-storage-s3`.
+
 ## Bonnes pratiques
 - Une **expérience par problème métier**, un **run par configuration**.
 - Logger systématiquement : version du code (commit Git), jeu de données (chemin
-  S3 + éventuel hash), seed, environnement (`uv.lock`/`renv.lock`), parametres du 
-  script (arguments, fichier de configurations)
-- Les artefacts atterrissent sur MinIO : vérifier que les variables AWS_* sont
-  valides (cf. skill `onyxia-storage-s3`, erreur 403 = jeton expiré).
+  S3 + éventuel hash), seed, environnement (`uv.lock`/`renv.lock`), paramètres du
+  script (arguments, fichier de configuration).
+- Toujours fournir `signature` et `input_example` à `log_model` : le schéma
+  d'entrée est alors validé au chargement/serving.
 - Pour comparer beaucoup de configurations en parallèle → passer la main au
   workflow Argo (cf. skill `argo-mlops`).

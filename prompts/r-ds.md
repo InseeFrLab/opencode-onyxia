@@ -16,5 +16,7 @@ Standards (voir aussi la skill `r-datascience`) :
 - Modélisation : `tidymodels` (recipes + parsnip + workflows) ou modèles de base ;
   suivi possible via le package R `mlflow` — charge `mlflow-tracking`.
 - Fonctions documentées (roxygen2 si packagé), scripts paramétrés, pas de chemin absolu.
+- Versionnement : `.gitignore` adapté — skill `git-workflow-ds` ; restitution en
+  `.qmd` — skill `quarto-publication` ; secrets via Vault — skill `vault-secrets-onyxia`.
 
 Tu produis du code exécutable via `Rscript` et tu le vérifies quand c'est possible.

@@ -34,10 +34,14 @@ Dans `https://llm.lab.sspcloud.fr` : menu profil -> **Settings** -> **Account** 
 Les mettre dans `~/.bashrc` pour qu'elles s'appliquent à tous les services :
 
 ```bash
-echo 'export OPENAI_BASE_URL="https://llm.lab.sspcloud.fr/api"' >> ~/.bashrc
+echo 'export OPENAI_BASE_URL="https://llm.lab.sspcloud.fr/v1"' >> ~/.bashrc
 echo 'export OPENAI_API_KEY="sk-……"' >> ~/.bashrc
 source ~/.bashrc
 ```
+
+> Open WebUI expose `/v1` (couche OpenAI-compatible, attendue par OpenCode) *et*
+> `/api` (API native). Si `…/v1/chat/completions` répond `404`, utiliser `…/api`
+> en repli (test `curl` à l'étape 4 du README).
 
 > Recommandé : stocker la clé dans **Vault** (onglet « Mes secrets » d'Onyxia) et
 > l'injecter comme variable d'environnement à la création des services — la clé
@@ -87,7 +91,8 @@ cd ~/work/mon-projet-quelconque
 opencode
 ```
 
-- `/models` -> `qwen3-6-35b-moe`, `gemma4-26b-moe`, `qwen3-vl` sous « Onyxia LLM ».
+- `/models` -> `qwen3-6-35b-moe`, `gemma4-26b-moe`, `qwen3-vl` sous
+  « SSPCloud LLM (auto-hébergé) ».
 - **Tab** -> bascule `build` <-> `plan`.
 - `@python-ds`, `@r-ds`, `@mlops`, `@reviewer`, `@dataviz-vision` -> sous-agents
   (aussi délégués automatiquement). Les skills se chargent selon le contexte.
@@ -105,6 +110,26 @@ dépôt donné, vous pouvez :
 - ajouter `.opencode/skills/<nom>/SKILL.md` -> skills propres au projet ;
 - ajouter un `opencode.json` à la racine -> réglages qui priment sur le global
   (ex. changer le modèle par défaut, restreindre des permissions).
+
+## Serveurs MCP (optionnels, désactivés par défaut)
+
+`opencode.jsonc` pré-déclare deux serveurs MCP `remote` avec `"enabled": false` :
+
+- **excalidraw** (`https://api.excalidraw.com/api/v1/mcp`) : création de
+  diagrammes. Nécessite une clé dans `EXCALIDRAW_API_KEY`.
+- **datagouv** (`https://mcp.data.gouv.fr/mcp`) : recherche dans les données
+  publiques de data.gouv.fr. Sans authentification.
+
+> **Confidentialité** : un serveur MCP `remote` **envoie du contexte hors de la
+> plateforme** (vers le service tiers). N'activer qu'en connaissance de cause et
+> uniquement avec des contenus publics / non sensibles.
+
+Pour activer : plutôt que de modifier la config globale, préférer une surcharge
+par projet — un `opencode.json` à la racine du dépôt concerné :
+
+```json
+{ "mcp": { "datagouv": { "type": "remote", "url": "https://mcp.data.gouv.fr/mcp", "enabled": true } } }
+```
 
 ## Mettre à jour la config globale
 

@@ -74,7 +74,18 @@
       "mc *": "allow",
       "aws s3*": "allow",
       "mlflow *": "allow",
-      "argo *": "allow",
+      "duckdb *": "allow",
+      // Vault : lecture seule autorisée ; put/delete retombent sur "*": "ask".
+      "vault kv get*": "allow",
+      "vault kv list*": "allow",
+      // Argo : consultation libre, mais soumettre un workflow lance des
+      // conteneurs sur le cluster -> confirmation (cohérent avec kubectl apply).
+      "argo list*": "allow",
+      "argo get*": "allow",
+      "argo logs*": "allow",
+      "argo watch*": "allow",
+      "argo submit*": "ask",
+      "argo *": "ask",
       "kubectl get*": "allow",
       "kubectl describe*": "allow",
       "kubectl logs*": "allow",
@@ -93,6 +104,10 @@
   //  AGENTS — 2 agents principaux (Tab pour basculer) + 5 sous-agents
   //  délégués automatiquement selon leur "description", ou appelés via @nom.
   //  Le prompt système de chaque agent est dans ./prompts/<agent>.md
+  //
+  //  python-ds / r-ds / mlops n'ont volontairement PAS de restriction d'outils :
+  //  ils doivent exécuter et vérifier du code ; l'allowlist bash globale
+  //  ci-dessus (rm/curl/kubectl apply/docker/argo submit en "ask") les encadre.
   // =========================================================================
   "agent": {
     "build": {
@@ -129,7 +144,7 @@
 
     "mlops": {
       "mode": "subagent",
-      "description": "Ingénieur MLOps Onyxia : suivi d'expériences MLflow, parallélisation de l'entraînement via Argo Workflows, déploiement GitOps via ArgoCD, packaging et mise en production de modèles. À utiliser pour industrialiser/déployer un modèle.",
+      "description": "Ingénieur MLOps Onyxia : suivi d'expériences MLflow, parallélisation de l'entraînement via Argo Workflows (argo submit, CronWorkflow), déploiement GitOps via ArgoCD, packaging et mise en production de modèles. À utiliser pour industrialiser/déployer un modèle ou planifier des traitements récurrents.",
       "model": "onyxia/qwen3-6-35b-moe",
       "temperature": 0.2,
       "prompt": "./prompts/mlops.md"
@@ -150,7 +165,7 @@
       "model": "onyxia/qwen3-vl",
       "temperature": 0.3,
       "prompt": "./prompts/dataviz-vision.md",
-      "tools": { "write": false, "edit": false }
+      "tools": { "write": false, "edit": false, "bash": false }
     }
   },
 

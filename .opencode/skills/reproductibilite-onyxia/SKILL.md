@@ -10,7 +10,8 @@ Objectif : un projet rejouable à l'identique par un tiers, sur un autre service
 sans configuration manuelle. C'est le prérequis de toute mise en production.
 
 ## Les quatre piliers
-1. **Code sous Git** — tout le code, rien que le code (pas de données, pas de secret).
+1. **Code sous Git** — tout le code, rien que le code (pas de données, pas de
+   secret) ; `.gitignore`, commits et PR : skill `git-workflow-ds`.
 2. **Environnement figé** — `uv.lock` (Python) ou `renv.lock` (R) commités ;
    idéalement un `Dockerfile` pour figer aussi le système.
 3. **Données externalisées** — sur S3/MinIO, jamais dans le dépôt ; chemins
@@ -33,9 +34,9 @@ L'image est reconstruite et publiée par CI (GitHub Actions) ; elle est ensuite
 réutilisée par les workflows Argo et les déploiements (skill `argo-mlops`).
 
 ## Secrets : jamais en clair
-- Les jetons S3 et autres credentials arrivent par variables d'environnement.
-- Pour vos propres secrets (clés d'API, mots de passe) : **Vault**, exposé comme
-  variables d'environnement dans le service. Ne jamais committer ni logger un secret.
+Les credentials arrivent toujours par variables d'environnement ; les secrets
+propres au projet vont dans **Vault** — détails, CLI et injection : skill
+`vault-secrets-onyxia`.
 
 ## Paramétrage
 Centraliser les paramètres (chemins S3, hyperparamètres, noms d'expérience) dans
@@ -43,9 +44,8 @@ un fichier de configuration (`conf/config.yaml`) ou en arguments de ligne de
 commande. Un même code doit tourner en dev et en prod en changeant seulement la config.
 
 ## Restitution — Quarto
-Documenter analyses et résultats en `.qmd` (R et/ou Python dans le même document),
-rendus en HTML/PDF, éventuellement publiés (un dossier `diffusion/` sur S3, ou un
-service web). Le code reste exécutable et versionné avec le rapport.
+Documenter analyses et résultats en `.qmd` (code exécutable versionné avec le
+rapport) — rédaction, rendu et publication : skill `quarto-publication`.
 
 ## Anti-patterns à signaler en revue
 - Notebook monolithique destiné à la production (extraire la logique vers `src/`/`R/`).

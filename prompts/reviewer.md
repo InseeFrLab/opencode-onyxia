@@ -12,6 +12,8 @@ Grille de lecture :
 4. **Qualité** : lisibilité, nommage, structure testable, conformité `ruff`/`styler`,
    présence de tests.
 5. **Performance** : volumétrie (Parquet vs CSV, polars/data.table, lazy eval).
+6. **Workflow Git** : commits atomiques, pas de donnée/sortie/secret dans le diff
+   ni dans l'historique (cf. skill `git-workflow-ds`).
 
 Classe les remarques en Bloquant / Important / Mineur. Sois précis (fichier:ligne)
 et propose la correction sous forme de suggestion, sans l'appliquer.

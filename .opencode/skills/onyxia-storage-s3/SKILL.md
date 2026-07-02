@@ -46,6 +46,26 @@ fs.get(f"{BUCKET}/diffusion/dossier/", "dossier_local/", recursive=True)
 fs.glob(f"{BUCKET}/diffusion/dossier/**/COMMUNE.*")
 ```
 
+## Python — polars (lecture paresseuse sur S3)
+```python
+import os, polars as pl
+
+BUCKET = os.environ["USERNAME"]
+storage_options = {
+    "aws_endpoint_url": f"https://{os.environ['AWS_S3_ENDPOINT']}",
+    "aws_access_key_id": os.environ["AWS_ACCESS_KEY_ID"],
+    "aws_secret_access_key": os.environ["AWS_SECRET_ACCESS_KEY"],
+    "aws_session_token": os.environ["AWS_SESSION_TOKEN"],
+}
+df = (
+    pl.scan_parquet(f"s3://{BUCKET}/data/RPindividus.parquet",
+                    storage_options=storage_options)
+    .filter(pl.col("DEPT").is_in(["11", "31", "34"]))
+    .group_by("AGED", "DEPT").agg(pl.col("IPONDI").sum().alias("n"))
+    .collect()          # seules les données filtrées remontent en mémoire
+)
+```
+
 ## Python — duckdb (gros volumes, lecture paresseuse)
 Privilégier ces outils sur du Parquet : lecture colonne, *predicate pushdown*,
 seules les données utiles remontent en mémoire.
@@ -68,10 +88,10 @@ variables d'environnement injectées (via le *secrets manager* de DuckDB).
 
 ```r
 library(duckdb); library(DBI); library(dplyr)
- 
+
 con <- dbConnect(duckdb::duckdb())
 dbExecute(con, "INSTALL httpfs; LOAD httpfs;")
- 
+
 # Accès MinIO depuis les variables AWS_* (path-style + SSL obligatoires)
 dbExecute(con, sprintf("
   CREATE OR REPLACE SECRET minio (
@@ -80,16 +100,16 @@ dbExecute(con, sprintf("
   );",
   Sys.getenv("AWS_ACCESS_KEY_ID"), Sys.getenv("AWS_SECRET_ACCESS_KEY"),
   Sys.getenv("AWS_SESSION_TOKEN"), Sys.getenv("AWS_S3_ENDPOINT")))
- 
+
 BUCKET <- Sys.getenv("USERNAME")
- 
+
 # 1) Requête SQL directe
 df <- dbGetQuery(con, sprintf("
   SELECT AGED, DEPT, SUM(IPONDI) AS n
   FROM read_parquet('s3://%s/data/RPindividus.parquet')
   WHERE DEPT IN ('18','28','36')
   GROUP BY AGED, DEPT", BUCKET))
- 
+
 # 2) Style dplyr (lecture paresseuse) via une vue sur le dataset partitionné
 dbExecute(con, sprintf("CREATE VIEW rp AS
   SELECT * FROM read_parquet('s3://%s/data/RPindividus_partitionne/**/*.parquet',
@@ -98,14 +118,14 @@ res <- tbl(con, "rp") |>
   filter(DEPT %in% c("18", "28", "36")) |>
   group_by(AGED, DEPT) |> summarise(n = sum(IPONDI), .groups = "drop") |>
   collect()
- 
+
 # Écriture sur S3
 dbExecute(con, sprintf("COPY (SELECT * FROM rp) TO 's3://%s/diffusion/out.parquet'
                         (FORMAT parquet);", BUCKET))
- 
+
 dbDisconnect(con, shutdown = TRUE)
 ```
- 
+
 ## R — aws.s3 (alternative, fichiers CSV/divers)
 ```r
 library(aws.s3)

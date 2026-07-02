@@ -1,6 +1,6 @@
 ---
 name: python-datascience
-description: Standards de projet Python data science / ML sur Onyxia, alignés sur "Python pour la data science" (Lino Galiana, ENSAE) — environnement uv, qualité ruff, tests pytest, manipulation pandas/polars, lecture performante de Parquet avec pyarrow/duckdb, pipelines scikit-learn, mise à disposition via FastAPI. À charger pour créer/structurer un projet Python, choisir des librairies, ou écrire du code Python ML propre.
+description: Standards de projet Python data science / ML sur Onyxia, alignés sur "Python pour la data science" (Lino Galiana, ENSAE) — environnement uv, qualité ruff, tests pytest, manipulation pandas/polars, lecture performante de Parquet avec pyarrow/duckdb, pipelines scikit-learn, mise à disposition via FastAPI. À charger pour créer/structurer un projet Python, choisir des librairies, écrire du code Python ML propre, ou dès que la tâche mentionne pyproject.toml, uv.lock, un notebook à industrialiser, ruff, pytest ou scikit-learn.
 license: MIT
 ---
 
@@ -73,4 +73,6 @@ mon-projet/
 ## Principes (issus de la référence)
 Code modulaire (fonctions courtes et testables), séparation stricte code / config /
 données (Git ≠ stockage de données → tout sur S3), chemins paramétrés jamais en dur,
-notebooks réservés à l'exploration. Git est indispensable (chap. dédié de la référence).
+notebooks réservés à l'exploration. Git est indispensable — `.gitignore`, commits,
+notebooks : skill `git-workflow-ds`. Restitution des résultats : skill
+`quarto-publication`.

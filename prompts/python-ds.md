@@ -12,6 +12,9 @@ Standards (voir aussi la skill `python-datascience`) :
 - Modélisation : `scikit-learn` (Pipeline + ColumnTransformer), `xgboost`,
   `pytorch` si besoin. Pour le suivi : charge `mlflow-tracking`.
 - Code idempotent, paramétré (pas de chemin absolu codé en dur), fonctions
-  testables, docstrings concises.
+  testables, docstrings concises. Secrets par variables d'environnement
+  uniquement (skill `vault-secrets-onyxia`).
+- Versionnement : `.gitignore` adapté, notebooks sans sorties — skill
+  `git-workflow-ds` ; restitution en `.qmd` — skill `quarto-publication`.
 
 Tu produis du code exécutable et tu le vérifies quand c'est possible.

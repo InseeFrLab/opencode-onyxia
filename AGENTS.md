@@ -19,19 +19,22 @@ solutions « cloud générique ».
 
 ## Plateforme : ce qui est déjà fourni et préconfiguré
 - **Kubernetes** sous-jacent ; chaque service est un *chart Helm* du catalogue
-  (`inseefrlab/...`). Les services exposés ont une URL de la forme
-  `https://user-<namespace>-<id>.user.lab.sspcloud.fr`.
+  (`inseefrlab/...`). Deux conventions d'URL coexistent :
+  - `https://user-<namespace>-<id>.user.lab.sspcloud.fr` : URL **auto-générée**
+    d'un service lancé depuis le catalogue (MLflow, VSCode, Jupyter…) ;
+  - `https://<nom-choisi>.lab.sspcloud.fr` : hostname **déclaré soi-même** dans
+    un `Ingress` custom (ex. API de prédiction déployée en GitOps via ArgoCD).
 - **Stockage S3 = MinIO** (compatible API S3 d'Amazon). Le bucket personnel
   porte le nom d'utilisateur. Le dossier `diffusion/` à la racine d'un bucket
   est **accessible en lecture à tous** les utilisateurs (mécanisme de partage).
 - **Vault** pour les secrets (tokens, mots de passe), injectés comme variables
-  d'environnement dans les services.
+  d'environnement dans les services (détails dans la skill `vault-secrets-onyxia`).
 - **MLflow** : instance partagée pour le suivi d'expériences et le registre de
   modèles (métadonnées en PostgreSQL, artefacts sur MinIO).
 - **Argo Workflows** (orchestration de tâches parallèles sur K8s) et **ArgoCD**
   (déploiement continu en GitOps) pour l'industrialisation.
-- **duckdb** disponible dans tous les services interactifs, préférer son utilisation 
-  pour les traitements.
+- **duckdb** disponible dans tous les services interactifs ; à privilégier pour
+  les traitements sur données volumineuses (Parquet, lecture paresseuse).
 
 ## Variables d'environnement injectées automatiquement
 À LIRE depuis l'environnement, JAMAIS à coder en dur :
@@ -43,8 +46,10 @@ solutions « cloud générique ».
 | `AWS_S3_ENDPOINT` | hôte MinIO (ex. `minio.lab.sspcloud.fr`) |
 | `MLFLOW_TRACKING_URI` | renseignée quand un service MLflow tourne |
 | `MLFLOW_S3_ENDPOINT_URL` | endpoint S3 pour les artefacts MLflow |
+| `VAULT_ADDR`, `VAULT_TOKEN` | accès au serveur Vault (secrets) |
+| `VAULT_MOUNT`, `VAULT_TOP_DIR` | point de montage et dossier racine de vos secrets (skill `vault-secrets-onyxia`) |
 
-> **Expiration du jeton S3 (~5–7 jours)** : un jeton périmé provoque une erreur
+> **Expiration du jeton S3 (7 jours)** : un jeton périmé provoque une erreur
 > **403** sur MinIO et le service apparaît en rouge dans « Mes services ». Remèdes :
 > relancer un service (nouveau jeton) ou réinjecter des jetons frais. Si un agent
 > voit un 403 sur S3, suspecter l'expiration avant tout autre diagnostic.
@@ -81,4 +86,5 @@ donnée directement en mémoire** depuis S3 ; ne copier en local que si nécessa
 
 Quand une tâche relève d'un domaine outillé, **charge la skill correspondante**
 (`onyxia-storage-s3`, `mlflow-tracking`, `argo-mlops`, `r-datascience`,
-`python-datascience`, `reproductibilite-onyxia`) avant de produire du code.
+`python-datascience`, `reproductibilite-onyxia`, `quarto-publication`,
+`vault-secrets-onyxia`, `git-workflow-ds`) avant de produire du code.
