@@ -1,106 +1,59 @@
 ---
 name: quarto-publication
-description: Rédiger et publier des documents Quarto (.qmd) sur Onyxia — rapports HTML/PDF, présentations reveal.js, dashboards, sites et livres ; code R et Python exécutable, documents paramétrés, publication vers S3 (dossier diffusion/) ou GitHub Pages. À charger dès qu'il faut produire un rapport, une notice, une présentation, un dashboard ou de la documentation, ou que la tâche mentionne Quarto, .qmd, un .Rmd à migrer, ou un rendu HTML/PDF.
+description: Write and publish Quarto documents (.qmd) on Onyxia — HTML/PDF reports, reveal.js presentations, dashboards, websites and books; executable R and Python code, parameterized documents, publishing to S3 (diffusion/ folder) or GitHub Pages. Load this skill whenever a report, notice, presentation, dashboard or documentation must be produced, or when the task mentions Quarto, .qmd, migrating an .Rmd, or an HTML/PDF render (rapport, publier, présentation, tableau de bord).
 license: MIT
 ---
 
-# Rédiger et publier avec Quarto sur Onyxia
+# Writing and publishing with Quarto on Onyxia
 
-Quarto est l'outil de restitution recommandé (AGENTS.md) : le code (R et/ou
-Python) reste exécutable et versionné **avec** le rapport. Un `.Rmd` existant se
-migre généralement en renommant en `.qmd` et en adaptant l'en-tête.
+Quarto is the recommended reporting tool (AGENTS.md): the code (R and/or
+Python) stays executable and versioned **with** the report. An existing
+`.Rmd` usually migrates by renaming it to `.qmd` and adapting the header.
 
-> **Règle d'or** : le rendu est **re-générable** (`quarto render`) — jamais de
-> résultat copié-collé à la main, jamais de secret ni de donnée sensible dans
-> le document rendu.
+> **Golden rule**: the render must be **re-generable** (`quarto render`) —
+> never hand-pasted results, never a secret or sensitive data in the
+> rendered document.
 
-## Anatomie d'un `.qmd`
-````markdown
----
-title: "Analyse RP"
-author: "Prénom Nom"
-format:
-  html:
-    toc: true
-    code-fold: true
-execute:
-  echo: true
-  warning: false
-  freeze: auto        # fige les résultats des chunks non modifiés (reproductible)
----
+## Core workflow
 
-## Contexte
+1. **Create** a `.qmd` (or a project with `_quarto.yml`); read data
+   **from S3** (skill `onyxia-storage-s3`), never from a hard-coded local path.
+2. **Render / preview**:
+   ```bash
+   quarto render report.qmd             # -> report.html (or pdf depending on format)
+   quarto render report.qmd --to pdf
+   quarto preview report.qmd            # live render while writing
+   ```
+3. **Publish**: copy to the S3 `diffusion/` folder or `quarto publish gh-pages`
+   (recipes in [references/formats.md](references/formats.md)).
 
-```{r}
-library(dplyr)
-# ... code R exécuté au rendu ...
-```
+## Choosing a format
 
-```{python}
-import polars as pl
-# ... R et Python peuvent coexister dans le même document ...
-```
-````
-Les données se lisent **depuis S3** (skill `onyxia-storage-s3`), jamais depuis
-un chemin local en dur.
+| Deliverable | Format |
+|---|---|
+| Analysis report, notice | single `.qmd`, `format: html` (or `pdf`) |
+| Presentation | `format: revealjs` |
+| Monitoring dashboard | `format: dashboard` |
+| Multi-page documentation / site | project `type: website` |
+| Structured long-form (chapters) | project `type: book` |
+| Same report for several years/departments | parameterized document (`params`) |
 
-## Terminal — rendre et prévisualiser
-```bash
-quarto render rapport.qmd             # -> rapport.html (ou pdf selon format)
-quarto render rapport.qmd --to pdf
-quarto preview rapport.qmd            # rendu live pendant la rédaction
-```
+## Guardrails
 
-## Projets : site, livre, dashboard
-Un `_quarto.yml` à la racine transforme le dossier en projet :
-```yaml
-project:
-  type: website        # ou book, ou default
-website:
-  title: "Mon projet"
-  navbar:
-    left: [index.qmd, analyse.qmd]
-```
-- Présentation : `format: revealjs` dans l'en-tête du `.qmd`.
-- Dashboard : `format: dashboard` (composants `valuebox`, lignes/colonnes).
+- `freeze: auto` in projects: avoids re-running expensive unchanged chunks.
+- The `.qmd` is committed; the render (`.html`, `_site/`) goes to `output/`
+  or to S3, not into Git (skill `git-workflow-ds`).
+- Proofread the render before publishing: no secret, no individual-level data.
 
-## Documents paramétrés
-```yaml
-params:
-  annee: 2024
-  dept: "31"
-```
-Accès dans le code : `params$annee` (R) / balise `#| tags: [parameters]` puis
-`annee` (Python). Rendu avec d'autres valeurs :
-```bash
-quarto render rapport.qmd -P annee:2025 -P dept:11
-```
-Un même rapport sert ainsi plusieurs millésimes/départements sans duplication.
+## Where to look next
 
-## Publier
-```bash
-# 1) Vers le dossier public de son bucket (lisible par tout utilisateur authentifié)
-quarto render rapport.qmd
-aws --endpoint-url "https://$AWS_S3_ENDPOINT" s3 cp rapport.html "s3://$USERNAME/diffusion/"
-# site complet : aws ... s3 sync _site/ "s3://$USERNAME/diffusion/mon-site/"
+| Need | Read |
+|---|---|
+| `.qmd` anatomy, website/book/dashboard/revealjs recipes, parameterized documents, publish targets (S3 `diffusion/`, GitHub Pages), diagnostics | [references/formats.md](references/formats.md) |
+| Starter project config (website) | [assets/_quarto.yml](assets/_quarto.yml) |
+| Starter parameterized report (Python engine) | [assets/report-template.qmd](assets/report-template.qmd) |
 
-# 2) Vers GitHub Pages (projet website/book)
-quarto publish gh-pages
-```
+## References
 
-## Diagnostic / erreurs fréquentes
-- `quarto: command not found` → l'image du service ne l'embarque pas ; utiliser
-  une image datascience Insee récente (`inseefrlab/...`) qui l'inclut.
-- Rendu PDF échoue → moteur LaTeX manquant : `quarto install tinytex`.
-- Chunk Python non exécuté dans un projet R → package `reticulate` requis quand
-  R et Python coexistent (sinon `engine: jupyter`).
-
-## Garde-fous
-- `freeze: auto` en projet : évite de ré-exécuter des chunks coûteux non modifiés.
-- Le `.qmd` est commité ; le rendu (`.html`, `_site/`) va dans `output/` ou sur
-  S3, pas dans Git (skill `git-workflow-ds`).
-- Relire le rendu avant publication : pas de secret, pas de donnée individuelle.
-
-## Références
 - https://quarto.org/docs/guide/
-- utilitR, partie « Produire des documents » : https://book.utilitr.org
+- utilitR, "Produire des documents" section: https://book.utilitr.org

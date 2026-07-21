@@ -1,0 +1,73 @@
+---
+title: "Parameterized report"
+author: "Firstname Lastname"
+format:
+  html:
+    toc: true
+    code-fold: true
+execute:
+  echo: true
+  warning: false
+  freeze: auto
+params:
+  year: 2024
+  dept: "31"
+---
+
+<!--
+Starter parameterized report (Python engine).
+Render with other parameter values:
+  quarto render report-template.qmd -P year:2025 -P dept:11
+Data is read from S3 (skill onyxia-storage-s3), never from a hard-coded local path.
+-->
+
+```{python}
+#| tags: [parameters]
+# Default values — overridden by -P at render time
+year = 2024
+dept = "31"
+```
+
+## Context
+
+This report covers department `{python} dept` for year `{python} year`.
+
+```{python}
+#| label: load-data
+import os
+import polars as pl
+
+# Read directly from S3/MinIO (in memory, no local download)
+storage_options = {
+    "aws_endpoint": f"https://{os.environ['AWS_S3_ENDPOINT']}",
+}
+# df = pl.read_parquet(
+#     f"s3://<bucket>/data/{year}/dept={dept}/*.parquet",
+#     storage_options=storage_options,
+# )
+df = pl.DataFrame({"category": ["A", "B", "C"], "value": [12, 7, 21]})  # placeholder
+```
+
+## Key figure
+
+```{python}
+#| label: fig-values
+#| fig-cap: "Value by category (placeholder figure — replace with your own)"
+import matplotlib.pyplot as plt
+
+fig, ax = plt.subplots()
+ax.bar(df["category"], df["value"])
+ax.set_xlabel("Category")
+ax.set_ylabel("Value")
+plt.show()
+```
+
+## Summary table
+
+```{python}
+#| label: tbl-summary
+#| tbl-cap: "Summary by category (placeholder table — replace with your own)"
+from IPython.display import Markdown
+
+Markdown(df.to_pandas().to_markdown(index=False))
+```

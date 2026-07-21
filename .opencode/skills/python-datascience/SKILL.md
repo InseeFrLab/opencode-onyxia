@@ -1,39 +1,39 @@
 ---
 name: python-datascience
-description: Standards de projet Python data science / ML sur Onyxia, alignés sur "Python pour la data science" (Lino Galiana, ENSAE) — environnement uv, qualité ruff, tests pytest, manipulation pandas/polars, lecture performante de Parquet avec pyarrow/duckdb, pipelines scikit-learn, mise à disposition via FastAPI. À charger pour créer/structurer un projet Python, choisir des librairies, écrire du code Python ML propre, ou dès que la tâche mentionne pyproject.toml, uv.lock, un notebook à industrialiser, ruff, pytest ou scikit-learn.
+description: Python data science / ML project standards on Onyxia, aligned with "Python pour la data science" (Lino Galiana, ENSAE) — uv environment, ruff quality, pytest tests, pandas/polars data wrangling, performant Parquet reading with pyarrow/duckdb, scikit-learn pipelines, serving via FastAPI. Load to create/structure a Python project, choose libraries, write clean Python ML code, or whenever the task mentions pyproject.toml, uv.lock, a notebook to industrialize, ruff, pytest or scikit-learn. (keywords: manipulation de données, librairies, industrialiser un notebook, mise à disposition, qualité de code)
 license: MIT
 ---
 
-# Standards projet Python (data science / ML) sur Onyxia
+# Python project standards (data science / ML) on Onyxia
 
-Référence de fond : **« Python pour la data science »** de Lino Galiana
-(pythonds.linogaliana.fr), cours ENSAE/Ensai, conçu autour du SSP Cloud.
+Core reference: **"Python pour la data science"** (Python for data science) by
+Lino Galiana (pythonds.linogaliana.fr), an ENSAE/Ensai course designed around the SSP Cloud.
 
-## Environnement & outillage — uv
-`uv` est le gestionnaire recommandé (lockfile déterministe, rapide).
+## Environment & tooling — uv
+`uv` is the recommended manager (deterministic lockfile, fast).
 ```bash
-uv init mon-projet && cd mon-projet
+uv init my-project && cd my-project
 uv add polars pandas pyarrow duckdb scikit-learn mlflow s3fs
 uv add --dev ruff pytest mypy
 uv run python scripts/train.py
-uv sync                         # reconstitue l'env depuis uv.lock (reproductible)
+uv sync                         # rebuilds the env from uv.lock (reproducible)
 ```
-`pyproject.toml` + `uv.lock` sont commités ; jamais le `.venv/`.
+`pyproject.toml` + `uv.lock` are committed; never the `.venv/`.
 
-## Qualité de code
+## Code quality
 ```bash
-uv run ruff format .            # formatage
-uv run ruff check --fix .       # lint + corrections sûres
+uv run ruff format .            # formatting
+uv run ruff check --fix .       # lint + safe fixes
 uv run pytest -q                # tests
-uv run mypy src/                # typage progressif
+uv run mypy src/                # gradual typing
 ```
 
-## Manipulation de données : le bon outil selon la volumétrie
-- **pandas** : confort, petits/moyens volumes, écosystème riche.
-- **polars** : DataFrames rapides, *lazy* (`scan_*`) sur gros volumes.
-- **Parquet plutôt que CSV** : colonnaire, compressé, typé. Pour en tirer parti
-  (lecture de colonnes seules, *predicate pushdown*), lire avec **pyarrow.dataset**
-  ou **duckdb** plutôt que de tout charger en `DataFrame` :
+## Data wrangling: the right tool for the data volume
+- **pandas**: comfort, small/medium volumes, rich ecosystem.
+- **polars**: fast DataFrames, *lazy* (`scan_*`) on large volumes.
+- **Parquet rather than CSV**: columnar, compressed, typed. To take advantage
+  of it (column-only reads, *predicate pushdown*), read with **pyarrow.dataset**
+  or **duckdb** rather than loading everything into a `DataFrame`:
 ```python
 import pyarrow.dataset as ds, pyarrow.compute as pc
 table = (ds.dataset("data/RP_partitionne", partitioning="hive")
@@ -44,35 +44,36 @@ df = table.to_pandas()
 import duckdb
 duckdb.sql("FROM read_parquet('data/RP.parquet') SELECT AGED, SUM(IPONDI) GROUP BY AGED").to_df()
 ```
-- **Partitionner** un Parquet (`pq.write_to_dataset(..., partition_cols=[...])`)
-  quand on filtre souvent sur une variable. Accès S3 : skill `onyxia-storage-s3`.
+- **Partition** a Parquet dataset (`pq.write_to_dataset(..., partition_cols=[...])`)
+  when you often filter on a variable. S3 access: `onyxia-storage-s3` skill.
 
-## Modélisation — scikit-learn
-- Encapsuler tout le prétraitement dans un `Pipeline` + `ColumnTransformer`
-  (évite les fuites de données, rend le modèle déployable d'un bloc).
-- Séparer train/valid/test, fixer une seed, valider par validation croisée,
-  évaluer avec une métrique adaptée au problème (pas seulement l'accuracy).
-- Suivre chaque essai avec MLflow (skill `mlflow-tracking`).
+## Modeling — scikit-learn
+- Encapsulate all preprocessing in a `Pipeline` + `ColumnTransformer`
+  (prevents data leakage, makes the model deployable as a single unit).
+- Split train/valid/test, fix a seed, validate with cross-validation,
+  evaluate with a metric suited to the problem (not just accuracy).
+- Track every trial with MLflow (`mlflow-tracking` skill).
 
-## Mise à disposition d'un modèle — FastAPI
-Exposer la prédiction via une API **FastAPI** (chargée depuis le registre MLflow),
-puis conteneuriser et déployer (skill `argo-mlops`). Voir le chapitre
-« Mettre à disposition un modèle par le biais d'une API » de la référence.
+## Serving a model — FastAPI
+Expose predictions through a **FastAPI** API (loaded from the MLflow registry),
+then containerize and deploy (`argo-mlops` skill). See the chapter
+"Mettre à disposition un modèle par le biais d'une API" (serving a model
+through an API) in the reference.
 
-## Structure conseillée
+## Recommended structure
 ```
-mon-projet/
+my-project/
 ├── pyproject.toml / uv.lock
-├── src/mon_projet/        # code importable (data.py, features.py, model.py)
-├── scripts/               # entrées paramétrées (train.py, predict.py)
+├── src/my_project/        # importable code (data.py, features.py, model.py)
+├── scripts/               # parameterized entry points (train.py, predict.py)
 ├── tests/
-├── conf/                  # paramètres (YAML), PAS de secret
-└── notebooks/             # exploration uniquement (logique de prod -> src/)
+├── conf/                  # parameters (YAML), NO secrets
+└── notebooks/             # exploration only (production logic -> src/)
 ```
 
-## Principes (issus de la référence)
-Code modulaire (fonctions courtes et testables), séparation stricte code / config /
-données (Git ≠ stockage de données → tout sur S3), chemins paramétrés jamais en dur,
-notebooks réservés à l'exploration. Git est indispensable — `.gitignore`, commits,
-notebooks : skill `git-workflow-ds`. Restitution des résultats : skill
-`quarto-publication`.
+## Principles (from the reference)
+Modular code (short, testable functions), strict separation of code / config /
+data (Git ≠ data storage → everything on S3), parameterized paths never hard-coded,
+notebooks reserved for exploration. Git is essential — `.gitignore`, commits,
+notebooks: `git-workflow-ds` skill. Publishing results: `quarto-publication`
+skill.

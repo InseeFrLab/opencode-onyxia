@@ -1,94 +1,110 @@
-# Configuration OpenCode multi-agents pour Onyxia (Insee)
+# Multi-agent OpenCode configuration for Onyxia (Insee)
 
-Configuration prête à l'emploi pour piloter, depuis OpenCode, des projets de
-**data science et MLOps en R et Python** dans l'environnement **Onyxia / SSP Cloud**,
-en s'appuyant sur les **modèles auto-hébergés** de la plateforme (les données
-envoyées aux agents restent donc dans le périmètre Insee).
+Ready-to-use configuration to drive **R and Python data science / MLOps
+projects** from OpenCode in the **Onyxia / SSP Cloud** environment, backed by
+the platform's **self-hosted models** (data sent to the agents therefore stays
+within the Insee perimeter).
 
-## Contenu
+## Contents
 ```
 opencode-onyxia/
-├── opencode.jsonc                 # config principale : fournisseur, modèles, agents, permissions, MCP
-├── AGENTS.md                      # contexte Onyxia partagé par TOUS les agents (chargé automatiquement)
-├── install.sh                     # installation GLOBALE dans ~/.config/opencode (tous projets)
-├── INSTALL.md                     # guide d'installation détaillé
-├── prompts/                       # prompt système de chaque agent
+├── opencode.jsonc                 # main config: provider, models, agents, permissions, MCP
+├── AGENTS.md                      # Onyxia context shared by ALL agents (loaded automatically)
+├── install.sh                     # GLOBAL install into ~/.config/opencode (all projects)
+├── INSTALL.md                     # detailed install guide
+├── prompts/                       # one system prompt per agent
 │   ├── build.md  plan.md  python-ds.md  r-ds.md  mlops.md  reviewer.md  dataviz-vision.md
-└── .opencode/skills/              # savoir-faire chargés à la demande (1 dossier = 1 skill)
-    ├── onyxia-storage-s3/SKILL.md
-    ├── mlflow-tracking/SKILL.md
-    ├── argo-mlops/SKILL.md
-    ├── python-datascience/SKILL.md
-    ├── r-datascience/SKILL.md
-    ├── reproductibilite-onyxia/SKILL.md
-    ├── quarto-publication/SKILL.md
-    ├── vault-secrets-onyxia/SKILL.md
-    └── git-workflow-ds/SKILL.md
+└── .opencode/
+    ├── command/                   # slash commands (/new-project, /check-secrets, /diagnose)
+    └── skills/                    # know-how loaded on demand (1 folder = 1 skill)
+        ├── onyxia-storage-s3/     # S3/MinIO access (+ references/, scripts/check_s3.sh)
+        ├── eda-duckdb/            # exploratory analysis over S3 (+ scripts/profile_parquet.py)
+        ├── data-validation/       # data quality checks (pandera, pointblank, duckdb)
+        ├── insee-public-data/     # French public data (Insee, data.gouv.fr, COG)
+        ├── mlflow-tracking/       # experiment tracking, run comparison, registry
+        ├── argo-mlops/            # industrialization (+ references/, assets/workflow-template.yaml)
+        ├── onyxia-diagnostics/    # runbook: red service, 403, OOM, failed workflow
+        ├── python-datascience/    # Python standards (uv, ruff, pytest, polars…)
+        ├── r-datascience/         # R standards (renv, targets, testthat, utilitR)
+        ├── onyxia-reproducibility/# the four pillars of reproducibility
+        ├── quarto-publication/    # reports & publishing (+ references/, assets/)
+        ├── vault-secrets-onyxia/  # secrets via Vault
+        └── git-workflow-ds/       # DS Git workflow (+ scripts/setup-nbstripout.sh)
 ```
 
-## Installation (résumé — guide détaillé dans `INSTALL.md`)
-1. **Installer OpenCode** dans le service (VSCode/Jupyter) :
+## Installation (summary — detailed guide in `INSTALL.md`)
+1. **Install OpenCode** in the service (VSCode/Jupyter):
    ```bash
    curl -fsSL https://opencode.ai/install | bash
    ```
-2. **Installer la config en global** (valable pour tous les projets) — script fourni :
+2. **Install the config globally** (applies to all projects) — script provided:
    ```bash
-   cd opencode-onyxia && ./install.sh
+   cd opencode-onyxia && ./install.sh          # add --claude to also serve Claude Code
    ```
-   Il copie la config, `AGENTS.md`, les prompts et les skills dans
-   `~/.config/opencode/`. Détails et alternatives (manuel, suivi Git, surcharge
-   par projet) dans **`INSTALL.md`**.
-3. **Récupérer une clé d'API** sur la passerelle Open WebUI
-   `https://llm.lab.sspcloud.fr` (Settings → Account → API Keys), puis renseigner
-   les deux variables d'environnement :
+   It copies the config, `AGENTS.md`, prompts, skills and commands into
+   `~/.config/opencode/`. Details and alternatives (manual, Git-tracked,
+   per-project overrides) in **`INSTALL.md`**.
+3. **Get an API key** from the Open WebUI gateway
+   `https://llm.lab.sspcloud.fr` (Settings → Account → API Keys), then set the
+   two environment variables:
    ```bash
    export OPENAI_BASE_URL="https://llm.lab.sspcloud.fr/v1"
    export OPENAI_API_KEY="sk-……"
    ```
-   (Idéalement stockées dans Vault et injectées par le service.)
-4. **Vérifier l'endpoint** (Open WebUI expose `/v1` *et* `/api`) :
+   (Ideally stored in Vault and injected by the service.)
+4. **Check the endpoint** (Open WebUI exposes `/v1` *and* `/api`):
    ```bash
    curl -s "$OPENAI_BASE_URL/chat/completions" \
      -H "Authorization: Bearer $OPENAI_API_KEY" -H "Content-Type: application/json" \
      -d '{"model":"qwen3-6-35b-moe","messages":[{"role":"user","content":"ping"}],"max_tokens":5}'
    ```
-   Réponse `chat.completion` → `/v1` est correct ; `404` → utiliser `…/api`.
-   Les identifiants de modèles (`qwen3-6-35b-moe`, `gemma4-26b-moe`, `qwen3-vl`)
-   sont déjà confirmés et présents dans la config.
-5. **Lancer** : `opencode` puis `/models` pour confirmer la présence des modèles.
+   A `chat.completion` response → `/v1` is correct; `404` → use `…/api`.
+   The model ids (`qwen3-6-35b-moe`, `gemma4-26b-moe`, `qwen3-vl`) are
+   confirmed and already present in the config.
+5. **Launch**: `opencode` then `/models` to confirm the models are listed.
 
-## Utilisation
-- **Basculer entre agents principaux** (`build` ⇄ `plan`) : touche **Tab**.
-- **Déléguer** : les sous-agents (`python-ds`, `r-ds`, `mlops`, `reviewer`,
-  `dataviz-vision`) sont appelés automatiquement selon le besoin, ou explicitement
-  via `@nom` (ex. `@reviewer relis le diff`, `@mlops déploie ce modèle`).
-- **Skills** : chargées automatiquement quand la tâche correspond à leur description ;
-  on peut aussi y faire référence dans le prompt.
+## Usage
+- **Switch between primary agents** (`build` ⇄ `plan`): **Tab** key.
+- **Delegate**: subagents (`python-ds`, `r-ds`, `mlops`, `reviewer`,
+  `dataviz-vision`) are invoked automatically as needed, or explicitly via
+  `@name` (e.g. `@reviewer review the diff`, `@mlops deploy this model`).
+- **Skills**: loaded automatically when the task matches their description;
+  you can also reference them in a prompt.
+- **Commands**:
+  - `/new-project` — scaffold a reproducible R/Python project (uv or renv,
+    tests, `.gitignore`, nbstripout, parameterized S3 paths, Quarto stub);
+  - `/check-secrets` — scan the repo (tree, staged, remotes, recent history)
+    for leaked credentials before committing;
+  - `/diagnose` — run the Onyxia runbook when a service or job misbehaves.
 
-## Répartition des modèles
-| Modèle | Rôle dans la config |
+## Model allocation
+| Model | Role in the config |
 |---|---|
-| `qwen3-6-35b-moe` | modèle par défaut — code, raisonnement, agents `build`/`python-ds`/`r-ds`/`mlops` |
-| `gemma4-26b-moe` | `small_model` (titres, résumés) + agents `plan` et `reviewer` (diversité de point de vue) |
-| `qwen3-vl` | agent `dataviz-vision` — lecture de graphiques, schémas, captures |
+| `qwen3-6-35b-moe` | default model — code, reasoning, agents `build`/`plan`/`python-ds`/`r-ds`/`mlops` |
+| `gemma4-26b-moe` | `small_model` (titles, summaries) + agent `reviewer` (diverse point of view) |
+| `qwen3-vl` | agent `dataviz-vision` — reading charts, diagrams, screenshots |
 
+## Bundled MCP servers (disabled by default)
+Two `remote` servers are pre-declared in `opencode.jsonc` with
+`"enabled": false`: **excalidraw** (diagrams, requires `EXCALIDRAW_API_KEY`)
+and **datagouv** (public data from data.gouv.fr). Activation and
+confidentiality precautions: see `INSTALL.md`.
 
-## Serveurs MCP livrés (désactivés par défaut)
-Deux serveurs `remote` sont pré-déclarés dans `opencode.jsonc` avec
-`"enabled": false` : **excalidraw** (diagrammes, nécessite `EXCALIDRAW_API_KEY`)
-et **datagouv** (données publiques data.gouv.fr). Activation et précautions de
-confidentialité : voir `INSTALL.md`.
+## Security / confidentiality
+- OpenCode is not sandboxed: `bash` commands really execute on the pod.
+  The permissions in `opencode.jsonc` allow the usual data science tooling and
+  **ask for confirmation** for network, Kubernetes mutations, and deletions.
+- MCP disabled by default (a "remote" MCP would send context off-platform).
+- On the public instance, only handle public / non-sensitive data.
+- Never embed a token in a Git remote URL; use `gh auth login` or a credential
+  helper (and `/check-secrets` before committing).
 
-## Sécurité / confidentialité
-- OpenCode n'est pas sandboxé : les commandes `bash` s'exécutent réellement sur le pod.
-  Les permissions de `opencode.jsonc` autorisent l'outillage data science usuel et
-  **demandent confirmation** pour le réseau, Kubernetes et les suppressions.
-- MCP désactivé par défaut (un MCP « remote » enverrait du contexte hors plateforme).
-- Sur l'instance publique, ne traiter que des données publiques / non sensibles.
-
-## Personnalisation
-- Ajouter un agent : nouveau bloc sous `agent` + un prompt dans `prompts/`.
-- Ajouter un savoir-faire : nouveau dossier `.opencode/skills/<nom>/SKILL.md`
-  (en-tête YAML `name` + `description` obligatoires).
-- Les skills suivent le standard Agent Skills : celles écrites pour Claude Code
-  fonctionnent telles quelles.
+## Customization
+- Add an agent: new block under `agent` + a prompt in `prompts/`.
+- Add know-how: new folder `.opencode/skills/<name>/SKILL.md`
+  (YAML header with `name` + `description` required). Larger skills can bundle
+  `references/` (loaded on demand), `scripts/` (executable helpers) and
+  `assets/` (copyable templates).
+- Add a command: new file `.opencode/command/<name>.md`.
+- The skills follow the Agent Skills standard: skills written for Claude Code
+  work as-is, and `./install.sh --claude` exposes these ones to Claude Code.

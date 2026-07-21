@@ -1,90 +1,90 @@
-# Contexte projet — Datascience sur Onyxia
+# Project context — Data science on Onyxia
 
-Ce dépôt est travaillé depuis un service interactif (VSCode, Jupyter ou RStudio)
-lancé sur **Onyxia** — la plateforme de data science développée par l'Insee,
-déployée ici sur le **SSP Cloud** (`datalab.sspcloud.fr`). Tous les agents
-doivent connaître et exploiter cet environnement plutôt que de proposer des
-solutions « cloud générique ».
+This repository is worked on from an interactive service (VSCode, Jupyter or RStudio)
+launched on **Onyxia** — the data science platform developed by Insee,
+deployed here on the **SSP Cloud** (`datalab.sspcloud.fr`). All agents
+must know and leverage this environment rather than proposing
+"generic cloud" solutions.
 
-## Principes directeurs
-- **Reproductibilité d'abord** : tout doit pouvoir être rejoué à l'identique
-  (lockfiles, conteneurs, pipelines déclaratifs, données sur S3, code sous Git).
-- **Open source** : R, Python, Quarto, Git ; pas de dépendance propriétaire.
-- **Confidentialité** : sur l'instance publique, seules des données publiques /
-  non sensibles sont autorisées. Ne jamais écrire de secret en clair dans le code.
-  Les LLM utilisés ici sont **auto-hébergés sur la plateforme** : les données
-  envoyées aux agents restent dans le périmètre sspcloud.
-- **Du prototype à la production** : on vise le cycle MLOps complet
-  (expérimentation → packaging → déploiement → supervision).
+## Guiding principles
+- **Reproducibility first**: everything must be replayable identically
+  (lockfiles, containers, declarative pipelines, data on S3, code under Git).
+- **Open source**: R, Python, Quarto, Git; no proprietary dependency.
+- **Confidentiality**: on the public instance, only public / non-sensitive
+  data is allowed. Never write a secret in plain text in the code.
+  The LLMs used here are **self-hosted on the platform**: data sent
+  to the agents stays within the sspcloud perimeter.
+- **From prototype to production**: we target the full MLOps cycle
+  (experimentation → packaging → deployment → monitoring).
 
-## Plateforme : ce qui est déjà fourni et préconfiguré
-- **Kubernetes** sous-jacent ; chaque service est un *chart Helm* du catalogue
-  (`inseefrlab/...`). Deux conventions d'URL coexistent :
-  - `https://user-<namespace>-<id>.user.lab.sspcloud.fr` : URL **auto-générée**
-    d'un service lancé depuis le catalogue (MLflow, VSCode, Jupyter…) ;
-  - `https://<nom-choisi>.lab.sspcloud.fr` : hostname **déclaré soi-même** dans
-    un `Ingress` custom (ex. API de prédiction déployée en GitOps via ArgoCD).
-- **Stockage S3 = MinIO** (compatible API S3 d'Amazon). Le bucket personnel
-  porte le nom d'utilisateur. Le dossier `diffusion/` à la racine d'un bucket
-  est **accessible en lecture à tous** les utilisateurs (mécanisme de partage).
-- **Vault** pour les secrets (tokens, mots de passe), injectés comme variables
-  d'environnement dans les services (détails dans la skill `vault-secrets-onyxia`).
-- **MLflow** : instance partagée pour le suivi d'expériences et le registre de
-  modèles (métadonnées en PostgreSQL, artefacts sur MinIO).
-- **Argo Workflows** (orchestration de tâches parallèles sur K8s) et **ArgoCD**
-  (déploiement continu en GitOps) pour l'industrialisation.
-- **duckdb** disponible dans tous les services interactifs ; à privilégier pour
-  les traitements sur données volumineuses (Parquet, lecture paresseuse).
+## Platform: what is already provided and preconfigured
+- **Kubernetes** underneath; each service is a *Helm chart* from the catalog
+  (`inseefrlab/...`). Two URL conventions coexist:
+  - `https://user-<namespace>-<id>.user.lab.sspcloud.fr`: **auto-generated** URL
+    of a service launched from the catalog (MLflow, VSCode, Jupyter…);
+  - `https://<chosen-name>.lab.sspcloud.fr`: hostname **declared yourself** in
+    a custom `Ingress` (e.g. prediction API deployed via GitOps with ArgoCD).
+- **S3 storage = MinIO** (compatible with Amazon's S3 API). The personal bucket
+  is named after the username. The `diffusion/` folder at the root of a bucket
+  is **readable by all** users (sharing mechanism).
+- **Vault** for secrets (tokens, passwords), injected as environment
+  variables into services (details in the `vault-secrets-onyxia` skill).
+- **MLflow**: shared instance for experiment tracking and the model
+  registry (metadata in PostgreSQL, artifacts on MinIO).
+- **Argo Workflows** (orchestration of parallel tasks on K8s) and **ArgoCD**
+  (continuous deployment via GitOps) for industrialization.
+- **duckdb** available in all interactive services; prefer it for
+  processing large data (Parquet, lazy reading).
 
-## Variables d'environnement injectées automatiquement
-À LIRE depuis l'environnement, JAMAIS à coder en dur :
+## Automatically injected environment variables
+READ from the environment, NEVER hard-code:
 
-| Variable | Rôle |
+| Variable | Role |
 |---|---|
-| `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `AWS_SESSION_TOKEN` | jeton S3/MinIO temporaire |
-| `AWS_DEFAULT_REGION` | région (souvent `us-east-1` côté MinIO) |
-| `AWS_S3_ENDPOINT` | hôte MinIO (ex. `minio.lab.sspcloud.fr`) |
-| `MLFLOW_TRACKING_URI` | renseignée quand un service MLflow tourne |
-| `MLFLOW_S3_ENDPOINT_URL` | endpoint S3 pour les artefacts MLflow |
-| `VAULT_ADDR`, `VAULT_TOKEN` | accès au serveur Vault (secrets) |
-| `VAULT_MOUNT`, `VAULT_TOP_DIR` | point de montage et dossier racine de vos secrets (skill `vault-secrets-onyxia`) |
+| `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `AWS_SESSION_TOKEN` | temporary S3/MinIO token |
+| `AWS_DEFAULT_REGION` | region (often `us-east-1` on the MinIO side) |
+| `AWS_S3_ENDPOINT` | MinIO host (e.g. `minio.lab.sspcloud.fr`) |
+| `MLFLOW_TRACKING_URI` | set when an MLflow service is running |
+| `MLFLOW_S3_ENDPOINT_URL` | S3 endpoint for MLflow artifacts |
+| `VAULT_ADDR`, `VAULT_TOKEN` | access to the Vault server (secrets) |
+| `VAULT_MOUNT`, `VAULT_TOP_DIR` | mount point and root folder of your secrets (`vault-secrets-onyxia` skill) |
 
-> **Expiration du jeton S3 (7 jours)** : un jeton périmé provoque une erreur
-> **403** sur MinIO et le service apparaît en rouge dans « Mes services ». Remèdes :
-> relancer un service (nouveau jeton) ou réinjecter des jetons frais. Si un agent
-> voit un 403 sur S3, suspecter l'expiration avant tout autre diagnostic.
+> **S3 token expiration (7 days)**: an expired token causes a **403** error
+> on MinIO and the service shows up in red in "My services". Remedies:
+> relaunch a service (new token) or re-inject fresh tokens. If an agent
+> sees a 403 on S3, suspect expiration before any other diagnosis.
 
-## Accès aux données (résumé — détails dans la skill `onyxia-storage-s3`)
+## Data access (summary — details in the `onyxia-storage-s3` skill)
 
-Endpoint MinIO du SSP Cloud : `https://minio.lab.sspcloud.fr` (= `$AWS_S3_ENDPOINT`).
-**Règle Onyxia** : ne pas télécharger les fichiers dans le conteneur, **ingérer la
-donnée directement en mémoire** depuis S3 ; ne copier en local que si nécessaire.
+SSP Cloud MinIO endpoint: `https://minio.lab.sspcloud.fr` (= `$AWS_S3_ENDPOINT`).
+**Onyxia rule**: do not download files into the container, **ingest the
+data directly into memory** from S3; only copy locally if necessary.
 
-- **Python** : `s3fs` pour lire/écrire en mémoire ; `duckdb` pour le
-  Parquet volumineux (lecture paresseuse, *predicate pushdown*).
-- **R** : `duckdb` (lecture Parquet/dataset sur S3) ou `aws.s3` (les variables AWS_* suffisent).
-- **Terminal** : **`aws s3`** est la CLI à privilégier (le client `mc` existe aussi) :
+- **Python**: `s3fs` to read/write in memory; `duckdb` for large
+  Parquet (lazy reading, *predicate pushdown*).
+- **R**: `duckdb` (reading Parquet/dataset on S3) or `aws.s3` (the AWS_* variables suffice).
+- **Terminal**: **`aws s3`** is the preferred CLI (the `mc` client also exists):
   `aws --endpoint-url "https://$AWS_S3_ENDPOINT" s3 ls s3://$USERNAME/`.
 
-## Conventions de travail attendues
-- Python : projet géré par **`uv`** (`pyproject.toml` + `uv.lock`), formaté/linté
-  avec **`ruff`**, testé avec **`pytest`**. Préférer `polars`/`duckdb` pour la volumétrie.
-- R : environnement figé par **`renv`**, pipelines avec **`targets`** uniquement si strictement nécessaires, tests avec
-  **`testthat`**, style `tidyverse`/`styler`.
-- Données : pas de gros fichiers dans Git → tout sur S3 ; chemins paramétrés.
-- Documentation et restitution : **Quarto**.
-- Aucun secret commité. Pas de données dans le dépôt.
+## Expected working conventions
+- Python: project managed with **`uv`** (`pyproject.toml` + `uv.lock`), formatted/linted
+  with **`ruff`**, tested with **`pytest`**. Prefer `polars`/`duckdb` for large data volumes.
+- R: environment pinned with **`renv`**, pipelines with **`targets`** only if strictly necessary, tests with
+  **`testthat`**, `tidyverse`/`styler` style.
+- Data: no large files in Git → everything on S3; parameterized paths.
+- Documentation and reporting: **Quarto**.
+- No secret committed. No data in the repository.
 
-## Références internes (faisant autorité)
-- Doc plateforme SSP Cloud : https://docs.sspcloud.fr
-- Guide utilisateur Onyxia : https://docs.onyxia.sh/user-doc/user-guide
-- **R** — utilitR (bonnes pratiques Insee) : https://book.utilitr.org
-- **Python** — « Python pour la data science » (L. Galiana) : https://pythonds.linogaliana.fr
-- MLOps : https://github.com/InseeFrLab/formation-mlops
-- Mise en production / reproductibilité : https://ensae-reproductibilite.github.io/website
-- Images Docker data science : https://github.com/inseefrlab/images-datascience
+## Internal references (authoritative)
+- SSP Cloud platform docs: https://docs.sspcloud.fr
+- Onyxia user guide: https://docs.onyxia.sh/user-doc/user-guide
+- **R** — utilitR (Insee best practices): https://book.utilitr.org
+- **Python** — "Python pour la data science" (Python for data science, L. Galiana): https://pythonds.linogaliana.fr
+- MLOps: https://github.com/InseeFrLab/formation-mlops
+- Production deployment / reproducibility: https://ensae-reproductibilite.github.io/website
+- Data science Docker images: https://github.com/inseefrlab/images-datascience
 
-Quand une tâche relève d'un domaine outillé, **charge la skill correspondante**
+When a task falls within a tooled domain, **load the corresponding skill**
 (`onyxia-storage-s3`, `mlflow-tracking`, `argo-mlops`, `r-datascience`,
-`python-datascience`, `reproductibilite-onyxia`, `quarto-publication`,
-`vault-secrets-onyxia`, `git-workflow-ds`) avant de produire du code.
+`python-datascience`, `onyxia-reproducibility`, `quarto-publication`,
+`vault-secrets-onyxia`, `git-workflow-ds`) before producing code.

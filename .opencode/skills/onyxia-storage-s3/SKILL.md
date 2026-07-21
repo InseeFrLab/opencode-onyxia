@@ -1,162 +1,68 @@
 ---
 name: onyxia-storage-s3
-description: Lire et écrire des données sur le stockage S3/MinIO d'Onyxia (SSP Cloud), en Python (s3fs, pyarrow, duckdb, pandas/polars), en R (arrow, aws.s3) et via la CLI aws s3. À charger dès qu'une tâche lit ou écrit des données, mentionne S3, MinIO, un bucket, du Parquet/CSV distant, le dossier diffusion, ou une erreur 403 sur le stockage.
+description: Read and write data on Onyxia's S3/MinIO object storage (SSP Cloud), in Python (s3fs, polars, duckdb, pyarrow), in R (duckdb, arrow, aws.s3) and via the aws s3 CLI. Load whenever a task reads or writes data, mentions S3, MinIO, a bucket, remote Parquet/CSV files, the diffusion folder, or a 403 error on storage. (Mots-clés français : stockage, compartiment, lire un parquet sur S3, MinIO, dossier diffusion)
 license: MIT
 ---
 
-# Accès au stockage S3/MinIO sur Onyxia
+# S3/MinIO storage access on Onyxia
 
-Le datalab utilise **MinIO** (API compatible S3). Les identifiants sont injectés
-automatiquement dans le service à sa création — **ne jamais les coder en dur**.
-Endpoint MinIO du SSP Cloud : `https://minio.lab.sspcloud.fr`.
+The datalab uses **MinIO** (Amazon S3-compatible API). Credentials are injected
+automatically into the service at creation time — **never hardcode them**.
+SSP Cloud MinIO endpoint: `https://minio.lab.sspcloud.fr`.
 
-> **Règle d'or Onyxia** : ne pas télécharger les fichiers dans le conteneur,
-> **ingérer directement la donnée en mémoire** depuis S3 (via `s3fs`, `arrow`,
-> `duckdb`). On ne copie en local (`aws s3 cp`) que si un outil exige vraiment
-> un fichier sur disque.
+## Golden rules
+1. **Never hardcode credentials** — always read the injected `AWS_*`
+   environment variables.
+2. **Do not download files into the container**: ingest data directly
+   in memory / lazily from S3 (`s3fs`, `arrow`, `duckdb`). Only copy
+   locally (`aws s3 cp`) if a tool truly requires a file on disk.
+3. **Parquet first**: prefer Parquet + lazy readers (duckdb, polars,
+   arrow) — column pruning and predicate pushdown mean only the useful
+   data reaches memory.
+4. The `diffusion/` folder at the root of a bucket is **readable by all
+   authenticated users** (sharing / collaboration / reproducibility
+   mechanism).
 
-## Variables d'environnement injectées
+## Injected environment variables
 - `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `AWS_SESSION_TOKEN`
-- `AWS_DEFAULT_REGION`, `AWS_S3_ENDPOINT` (hôte seul, ex. `minio.lab.sspcloud.fr`)
+  — temporary S3/MinIO token
+- `AWS_DEFAULT_REGION` — region (usually `us-east-1` on MinIO)
+- `AWS_S3_ENDPOINT` — MinIO host only, no scheme (e.g. `minio.lab.sspcloud.fr`)
 
-Bucket personnel = nom d'utilisateur SSP Cloud. Le dossier `diffusion/` à la
-racine d'un bucket est **lisible par tous les utilisateurs authentifiés**
-(mécanisme de partage / collaboration / reproductibilité). Jeton valide **7 jours**.
+Personal bucket = SSP Cloud username. Careful: on pods, `$USERNAME` is the
+generic `onyxia` user — the real username is in `$VAULT_TOP_DIR` (or
+`$KUBERNETES_NAMESPACE` minus its `user-` prefix). Token is valid for **7 days**.
 
-## Python — s3fs (lecture/écriture en mémoire, recommandé)
-```python
-import os, s3fs, pandas as pd
+## First-hypothesis diagnostic: 403 = expired token
+A **403 / AccessDenied / ExpiredToken** error on MinIO almost always means
+the 7-day S3 token has expired (the service also shows red in "My services").
+Suspect expiration **before any other diagnosis**. Remedies:
+- Renew credentials from the Onyxia console: **"My account" → "Connect to
+  storage"** page (fresh tokens to re-export), or
+- Save code/data and **relaunch the service** (a new service gets a fresh
+  token).
 
-fs = s3fs.S3FileSystem(
-    client_kwargs={"endpoint_url": f"https://{os.environ['AWS_S3_ENDPOINT']}"}
-)
-BUCKET = os.environ["USERNAME"]
+Other frequent pitfalls:
+- **Endpoint**: always `https://$AWS_S3_ENDPOINT` — a URL without the
+  scheme fails.
+- **region**: with MinIO, use `region = ""` (R) to avoid spurious AWS
+  region resolution.
 
-fs.ls(f"{BUCKET}/diffusion")                     # lister
+## Recipes — where to look
 
-# Lire / écrire un DataFrame (CSV : 'r'/'w' ; Parquet binaire : 'rb'/'wb')
-with fs.open(f"{BUCKET}/diffusion/df.parquet", "rb") as f:
-    df = pd.read_parquet(f)
-with fs.open(f"{BUCKET}/diffusion/out.parquet", "wb") as f:
-    df.to_parquet(f)
+| Need | Go to |
+|---|---|
+| Python recipes (s3fs, polars `scan_parquet`, duckdb httpfs, pyarrow) | [references/python.md](references/python.md) |
+| R recipes (duckdb + secrets, aws.s3, arrow) | [references/r.md](references/r.md) |
+| CLI recipes (`aws s3`, `mc`) | [references/cli.md](references/cli.md) |
+| Automated diagnostic | run [scripts/check_s3.sh](scripts/check_s3.sh) |
 
-# Transférer des fichiers locaux <-> S3 (ex. ShapeFile multi-fichiers)
-fs.put("dossier_local/", f"{BUCKET}/diffusion/dossier/", recursive=True)
-fs.get(f"{BUCKET}/diffusion/dossier/", "dossier_local/", recursive=True)
-fs.glob(f"{BUCKET}/diffusion/dossier/**/COMMUNE.*")
-```
+## Sharing / collaboration
+Dropping files under `s3://<bucket>/diffusion/` makes them readable by
+everyone. For a collaborative project, agree on one member's bucket and put
+the data in its `diffusion/` folder; production code stays on Git.
 
-## Python — polars (lecture paresseuse sur S3)
-```python
-import os, polars as pl
-
-BUCKET = os.environ["USERNAME"]
-storage_options = {
-    "aws_endpoint_url": f"https://{os.environ['AWS_S3_ENDPOINT']}",
-    "aws_access_key_id": os.environ["AWS_ACCESS_KEY_ID"],
-    "aws_secret_access_key": os.environ["AWS_SECRET_ACCESS_KEY"],
-    "aws_session_token": os.environ["AWS_SESSION_TOKEN"],
-}
-df = (
-    pl.scan_parquet(f"s3://{BUCKET}/data/RPindividus.parquet",
-                    storage_options=storage_options)
-    .filter(pl.col("DEPT").is_in(["11", "31", "34"]))
-    .group_by("AGED", "DEPT").agg(pl.col("IPONDI").sum().alias("n"))
-    .collect()          # seules les données filtrées remontent en mémoire
-)
-```
-
-## Python — duckdb (gros volumes, lecture paresseuse)
-Privilégier ces outils sur du Parquet : lecture colonne, *predicate pushdown*,
-seules les données utiles remontent en mémoire.
-
-```python
-import duckdb
-con = duckdb.connect()
-con.sql("INSTALL httpfs; LOAD httpfs;")
-con.sql(f"SET s3_endpoint='{os.environ['AWS_S3_ENDPOINT']}'; SET s3_use_ssl=true;")
-con.sql(f"""
-  FROM read_parquet('s3://{BUCKET}/data/RPindividus.parquet')
-  SELECT AGED, DEPT, SUM(IPONDI) AS n WHERE DEPT IN ('11','31','34') GROUP BY AGED, DEPT
-""").to_df()
-```
-
-## R — duckdb (recommandé pour Parquet sur S3)
-DuckDB lit/écrit le Parquet sur MinIO via l'extension `httpfs`, avec lecture
-paresseuse et *predicate pushdown*. On configure l'accès S3 à partir des
-variables d'environnement injectées (via le *secrets manager* de DuckDB).
-
-```r
-library(duckdb); library(DBI); library(dplyr)
-
-con <- dbConnect(duckdb::duckdb())
-dbExecute(con, "INSTALL httpfs; LOAD httpfs;")
-
-# Accès MinIO depuis les variables AWS_* (path-style + SSL obligatoires)
-dbExecute(con, sprintf("
-  CREATE OR REPLACE SECRET minio (
-    TYPE s3, KEY_ID '%s', SECRET '%s', SESSION_TOKEN '%s',
-    ENDPOINT '%s', USE_SSL true, URL_STYLE 'path'
-  );",
-  Sys.getenv("AWS_ACCESS_KEY_ID"), Sys.getenv("AWS_SECRET_ACCESS_KEY"),
-  Sys.getenv("AWS_SESSION_TOKEN"), Sys.getenv("AWS_S3_ENDPOINT")))
-
-BUCKET <- Sys.getenv("USERNAME")
-
-# 1) Requête SQL directe
-df <- dbGetQuery(con, sprintf("
-  SELECT AGED, DEPT, SUM(IPONDI) AS n
-  FROM read_parquet('s3://%s/data/RPindividus.parquet')
-  WHERE DEPT IN ('18','28','36')
-  GROUP BY AGED, DEPT", BUCKET))
-
-# 2) Style dplyr (lecture paresseuse) via une vue sur le dataset partitionné
-dbExecute(con, sprintf("CREATE VIEW rp AS
-  SELECT * FROM read_parquet('s3://%s/data/RPindividus_partitionne/**/*.parquet',
-                             hive_partitioning = true);", BUCKET))
-res <- tbl(con, "rp") |>
-  filter(DEPT %in% c("18", "28", "36")) |>
-  group_by(AGED, DEPT) |> summarise(n = sum(IPONDI), .groups = "drop") |>
-  collect()
-
-# Écriture sur S3
-dbExecute(con, sprintf("COPY (SELECT * FROM rp) TO 's3://%s/diffusion/out.parquet'
-                        (FORMAT parquet);", BUCKET))
-
-dbDisconnect(con, shutdown = TRUE)
-```
-
-## R — aws.s3 (alternative, fichiers CSV/divers)
-```r
-library(aws.s3)
-bucket <- Sys.getenv("USERNAME")
-df <- s3read_using(readr::read_csv, object = "data/t.csv", bucket = bucket, opts = list(region = ""))
-s3write_using(df, arrow::write_parquet, object = "out/t.parquet", bucket = bucket, opts = list(region = ""))
-```
-
-## Terminal — aws s3 (CLI préférée à mc)
-La CLI `aws` lit les variables AWS_* automatiquement ; préciser l'endpoint MinIO.
-```bash
-aws --endpoint-url "https://$AWS_S3_ENDPOINT" s3 ls "s3://$USERNAME/diffusion/"
-aws --endpoint-url "https://$AWS_S3_ENDPOINT" s3 cp ./fichier.parquet "s3://$USERNAME/data/"
-aws --endpoint-url "https://$AWS_S3_ENDPOINT" s3 sync ./local_dir "s3://$USERNAME/data/dir"
-```
-Astuce : exporter `AWS_ENDPOINT_URL="https://$AWS_S3_ENDPOINT"` une fois pour
-éviter de répéter `--endpoint-url`. (Le client `mc`, alias `s3`, existe aussi
-sur la plateforme mais on privilégie `aws s3`.)
-
-## Diagnostic
-- **403 / AccessDenied** → jeton expiré (7 j). Sauvegarder code/données et
-  repartir d'un nouveau service (jeton frais) ; c'est la cause la plus fréquente.
-- **Endpoint** : toujours `https://$AWS_S3_ENDPOINT`. Une URL sans schéma échoue.
-- **region** : avec MinIO, `region = ""` (R) évite les résolutions AWS parasites.
-
-## Partage / collaboration
-Déposer dans `s3://<bucket>/diffusion/` rend lisible par tous. Pour un projet
-collaboratif, s'accorder sur le bucket d'un membre et y mettre les données dans
-`diffusion/` ; le code de production reste, lui, sur Git.
-
-## Références
+## References
 - docs.sspcloud.fr/content/storage.html
-- « Python pour la data science » (L. Galiana), chap. Parquet & cloud :
+- "Python pour la data science" (L. Galiana), Parquet & cloud chapter:
   pythonds.linogaliana.fr/content/manipulation/05_parquet_s3.html

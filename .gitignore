@@ -1,10 +1,10 @@
-# --- Secrets / variables d'environnement (NE JAMAIS COMMITER) ---
+# --- Secrets / environment variables (NEVER COMMIT) ---
 .env
 *.env
 *.key
 secrets.*
 
-# --- État local OpenCode (les skills/agents/config RESTENT versionnés) ---
+# --- Local OpenCode state (skills/agents/config STAY versioned) ---
 .opencode/cache/
 .opencode/logs/
 .opencode/auth.json
@@ -27,7 +27,7 @@ __pycache__/
 renv/library/
 renv/staging/
 
-# --- Données & artefacts lourds (à stocker sur S3, pas dans Git) ---
+# --- Data & heavy artifacts (stored on S3, not in Git) ---
 data/
 *.parquet
 *.csv
@@ -36,7 +36,7 @@ data/
 *.pkl
 mlruns/
 
-# --- Système / éditeurs ---
+# --- System / editors ---
 .DS_Store
 Thumbs.db
 *.swp

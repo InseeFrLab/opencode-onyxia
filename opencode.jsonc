@@ -1,58 +1,63 @@
 {
   "$schema": "https://opencode.ai/config.json",
-
   // =========================================================================
-  //  FOURNISSEUR : modèles auto-hébergés exposés par la plateforme Onyxia.
-  //  La passerelle est Open WebUI (https://llm.lab.sspcloud.fr) : elle expose une
-  //  couche OpenAI-compatible sur /v1 (distincte de l'API native /api).
+  //  PROVIDER: self-hosted models exposed by the Onyxia platform.
+  //  The gateway is Open WebUI (https://llm.lab.sspcloud.fr): it exposes an
+  //  OpenAI-compatible layer on /v1 (distinct from the native /api API).
   //
-  //  baseURL attendue par OpenCode :  https://llm.lab.sspcloud.fr/v1
-  //    -> OpenCode appelle {baseURL}/chat/completions = /v1/chat/completions
-  //    -> Repli si /v1 absent : https://llm.lab.sspcloud.fr/api  (cf. INSTALL.md)
+  //  baseURL expected by OpenCode:  https://llm.lab.sspcloud.fr/v1
+  //    -> OpenCode calls {baseURL}/chat/completions = /v1/chat/completions
+  //    -> Fallback if /v1 is absent: https://llm.lab.sspcloud.fr/api  (see INSTALL.md)
   //
-  //  Les CLES de "models" ci-dessous sont confirmées (curl .../api/models) :
-  //  gemma4-26b-moe, qwen3-6-35b-moe, qwen3-vl. Les "limit" restent des
-  //  estimations : ajustez-les au déploiement réel.
+  //  The "models" KEYS below are confirmed (curl .../api/models):
+  //  gemma4-26b-moe, qwen3-6-35b-moe, qwen3-vl. The gateway does not publish
+  //  context/output limits; see the note in INSTALL.md if generation truncates.
   // =========================================================================
   "provider": {
     "onyxia": {
       "npm": "@ai-sdk/openai-compatible",
-      "name": "SSPCloud LLM (auto-hébergé)",
+      "name": "SSPCloud LLM (self-hosted)",
       "options": {
         "baseURL": "{env:OPENAI_BASE_URL}",
         "apiKey": "{env:OPENAI_API_KEY}"
       },
       "models": {
         "qwen3-6-35b-moe": {
-          "name": "Qwen3 35B MoE — code & raisonnement",
+          "name": "Qwen3 35B MoE — code & reasoning",
           "tools": true,
-          "limit": { "context": 131072, "output": 32768 }
+          "limit": {
+            "context": 131072,
+            "output": 32768
+          }
         },
         "gemma4-26b-moe": {
-          "name": "Gemma 4 26B MoE — rapide / planification",
+          "name": "Gemma 4 26B MoE — fast / review",
           "tools": true,
-          "limit": { "context": 131072, "output": 16384 }
+          "limit": {
+            "context": 131072,
+            "output": 16384
+          }
         },
         "qwen3-vl": {
-          "name": "Qwen3 VL — vision (graphiques, schémas, captures)",
+          "name": "Qwen3 VL — vision (charts, diagrams, screenshots)",
           "tools": true,
-          "limit": { "context": 65536, "output": 16384 }
+          "limit": {
+            "context": 65536,
+            "output": 16384
+          }
         }
       }
     }
   },
-
-  // ---- Modèle par défaut + petit modèle (titres, résumés, compaction) ----
+  // ---- Default model + small model (titles, summaries, compaction) ----
   "model": "onyxia/qwen3-6-35b-moe",
   "small_model": "onyxia/gemma4-26b-moe",
-
-  // ---- Agent par défaut au lancement ----
+  // ---- Default agent at startup ----
   "default_agent": "plan",
-
   // =========================================================================
-  //  PERMISSIONS — OpenCode n'est PAS sandboxé : tout `bash` s'exécute sur le pod.
-  //  On autorise largement l'outillage data science usuel, on demande
-  //  confirmation pour tout ce qui est destructif ou sortant (réseau, k8s, rm).
+  //  PERMISSIONS — OpenCode is NOT sandboxed: every `bash` runs on the pod.
+  //  Common data science tooling is broadly allowed; anything destructive or
+  //  outbound (network, k8s mutations, rm) asks for confirmation.
   // =========================================================================
   "permission": {
     "edit": "allow",
@@ -75,11 +80,11 @@
       "aws s3*": "allow",
       "mlflow *": "allow",
       "duckdb *": "allow",
-      // Vault : lecture seule autorisée ; put/delete retombent sur "*": "ask".
+      // Vault: read-only allowed; put/delete fall through to "*": "ask".
       "vault kv get*": "allow",
       "vault kv list*": "allow",
-      // Argo : consultation libre, mais soumettre un workflow lance des
-      // conteneurs sur le cluster -> confirmation (cohérent avec kubectl apply).
+      // Argo: browsing is free, but submitting a workflow launches containers
+      // on the cluster -> confirmation (consistent with kubectl apply).
       "argo list*": "allow",
       "argo get*": "allow",
       "argo logs*": "allow",
@@ -89,6 +94,7 @@
       "kubectl get*": "allow",
       "kubectl describe*": "allow",
       "kubectl logs*": "allow",
+      "kubectl top*": "allow",
       "kubectl apply*": "ask",
       "kubectl delete*": "ask",
       "docker *": "ask",
@@ -97,17 +103,18 @@
       "wget *": "ask",
       "*": "ask"
     },
-    "skill": { "*": "allow" }
+    "skill": {
+      "*": "allow"
+    }
   },
-
   // =========================================================================
-  //  AGENTS — 2 agents principaux (Tab pour basculer) + 5 sous-agents
-  //  délégués automatiquement selon leur "description", ou appelés via @nom.
-  //  Le prompt système de chaque agent est dans ./prompts/<agent>.md
+  //  AGENTS — 2 primary agents (Tab to switch) + 5 subagents, delegated
+  //  automatically based on their "description" or invoked via @name.
+  //  Each agent's system prompt lives in ./prompts/<agent>.md
   //
-  //  python-ds / r-ds / mlops n'ont volontairement PAS de restriction d'outils :
-  //  ils doivent exécuter et vérifier du code ; l'allowlist bash globale
-  //  ci-dessus (rm/curl/kubectl apply/docker/argo submit en "ask") les encadre.
+  //  python-ds / r-ds / mlops deliberately have NO tool restriction:
+  //  they must execute and verify code; the global bash allowlist above
+  //  (rm/curl/kubectl apply/docker/argo submit on "ask") keeps them in check.
   // =========================================================================
   "agent": {
     "build": {
@@ -116,67 +123,90 @@
       "temperature": 0.2,
       "prompt": "./prompts/build.md"
     },
-
     "plan": {
       "mode": "primary",
-      "model": "onyxia/qwen3-6-35b-moe",
+      "model": "onyxia/gemma4-26b-moe",
       "temperature": 0.1,
       "prompt": "./prompts/plan.md",
-      "tools": { "write": false, "edit": false },
-      "permission": { "bash": { "*": "ask" } }
+      "tools": {
+        "write": false,
+        "edit": false
+      },
+      "permission": {
+        "bash": {
+          "*": "ask"
+        }
+      }
     },
-
     "python-ds": {
       "mode": "subagent",
-      "description": "Spécialiste Python data science / ML sur Onyxia (uv, ruff, polars, pandas, scikit-learn, pyarrow, s3fs). À utiliser pour écrire ou refactorer du code Python d'analyse, de modélisation ou de pipeline.",
+      "description": "Python data science / ML specialist on Onyxia (uv, ruff, polars, pandas, scikit-learn, pyarrow, s3fs). Use to write or refactor Python code for analysis, modelling, or pipelines.",
       "model": "onyxia/qwen3-6-35b-moe",
       "temperature": 0.2,
       "prompt": "./prompts/python-ds.md"
     },
-
     "r-ds": {
       "mode": "subagent",
-      "description": "Spécialiste R data science (tidyverse, data.table, targets, renv, testthat, aws.s3, arrow). À utiliser pour tout code R d'analyse, de modélisation ou de pipeline reproductible.",
+      "description": "R data science specialist (tidyverse, data.table, targets, renv, testthat, aws.s3, arrow). Use for any R code for analysis, modelling, or reproducible pipelines.",
       "model": "onyxia/qwen3-6-35b-moe",
       "temperature": 0.2,
       "prompt": "./prompts/r-ds.md"
     },
-
     "mlops": {
       "mode": "subagent",
-      "description": "Ingénieur MLOps Onyxia : suivi d'expériences MLflow, parallélisation de l'entraînement via Argo Workflows (argo submit, CronWorkflow), déploiement GitOps via ArgoCD, packaging et mise en production de modèles. À utiliser pour industrialiser/déployer un modèle ou planifier des traitements récurrents.",
+      "description": "Onyxia MLOps engineer: MLflow experiment tracking, parallel training via Argo Workflows (argo submit, CronWorkflow), GitOps deployment via ArgoCD, model packaging and productionization. Use to industrialize/deploy a model or schedule recurring jobs.",
       "model": "onyxia/qwen3-6-35b-moe",
       "temperature": 0.2,
       "prompt": "./prompts/mlops.md"
     },
-
     "reviewer": {
       "mode": "subagent",
-      "description": "Relecteur de code en lecture seule : qualité, reproductibilité, sécurité (aucun secret en dur), bonnes pratiques R/Python. À utiliser pour relire un diff ou un module avant un commit.",
+      "description": "Read-only code reviewer: quality, reproducibility, security (no hardcoded secrets), R/Python best practices. Use to review a diff or a module before a commit.",
       "model": "onyxia/gemma4-26b-moe",
       "temperature": 0.1,
       "prompt": "./prompts/reviewer.md",
-      "tools": { "write": false, "edit": false, "bash": false }
+      "tools": {
+        "write": false,
+        "edit": false,
+        "bash": false
+      },
+      "permission": {
+        "bash": {
+          // Read-only diagnostics — no file mutation, no network, no rm
+          "ruff *lint*": "allow",
+          "ruff check *": "allow",
+          "ruff format --check *": "allow",
+          "mypy *": "allow",
+          "python -m py_compile *": "allow",
+          "python -m pytest --collect-only *": "allow",
+          "python -m pytest -q --collect-only *": "allow",
+          "Rscript -e *": "allow",
+          "R -e *": "allow",
+          "*": "ask"
+        }
+      }
     },
-
     "dataviz-vision": {
       "mode": "subagent",
-      "description": "Analyse visuelle (modèle vision) : lit des captures d'écran, graphiques matplotlib/ggplot, diagrammes d'architecture ou tableaux de bord pour les interpréter ou suggérer des améliorations. À utiliser quand une image est fournie.",
+      "description": "Visual analysis (vision model): reads screenshots, matplotlib/ggplot charts, architecture diagrams, or dashboards to interpret them or suggest improvements. Use whenever an image is provided.",
       "model": "onyxia/qwen3-vl",
       "temperature": 0.3,
       "prompt": "./prompts/dataviz-vision.md",
-      "tools": { "write": false, "edit": false, "bash": false }
+      "tools": {
+        "write": false,
+        "edit": false,
+        "bash": false
+      }
     }
   },
-
   // =========================================================================
-  //  MCP (optionnel) — désactivé par défaut.
-  //  Attention : un serveur MCP "local" exécute une commande sur le pod ;
-  //  un serveur "remote" envoie du contexte hors de la plateforme.
-  //  À n'activer qu'en connaissance de cause (confidentialité des données Insee).
+  //  MCP (optional) — disabled by default.
+  //  Careful: a "local" MCP server executes a command on the pod;
+  //  a "remote" one sends context outside the platform.
+  //  Enable only knowingly (confidentiality of Insee data).
   // =========================================================================
   "mcp": {
-     "excalidraw": {
+    "excalidraw": {
       "type": "remote",
       "url": "https://api.excalidraw.com/api/v1/mcp",
       "enabled": false,
@@ -190,6 +220,5 @@
       "enabled": false
     }
   },
-
   "autoupdate": "notify"
 }
