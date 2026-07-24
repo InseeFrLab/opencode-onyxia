@@ -75,6 +75,52 @@ data directly into memory** from S3; only copy locally if necessary.
 - Documentation and reporting: **Quarto**.
 - No secret committed. No data in the repository.
 
+## Rendering reports (Quarto) — critical, applies to every Python/R report
+
+Rendering is where projects most often break on Onyxia. Before any render:
+
+- **Always render inside the project environment.** A bare `quarto render`
+  picks up the system interpreter (`/opt/python`), *not* your `.venv`, and
+  fails with "unactivated Python environment in .venv".
+  - Python: `uv run quarto render report.qmd` (never bare `quarto render`).
+  - Safety net: the `/new-project` scaffold drops an `_environment` file
+    (`QUARTO_PYTHON=.venv/bin/python`) plus a minimal `_quarto.yml`. Quarto
+    reads `_environment` only inside a project, so **both** are needed for a
+    bare render to fall back to the venv — prefer `uv run` regardless.
+  - R: render from the `renv`-activated session.
+- **The env must contain the rendering toolchain.** Quarto needs `jupyter`,
+  `nbclient`, `ipykernel` to execute Python cells; `tabulate` is required for
+  `df.to_markdown()`. These live in the project's `doc` dependency group —
+  never assume the system Python has them.
+- **Cell options are Jupyter dialect, not knitr.** Use `#| echo: false`,
+  `#| output: asis`, `#| fig-cap:` — **never** `#| results: asis` (that is R).
+- **Embedding a figure:** draw it in a `{python}` cell and let the cell emit it
+  (add `#| fig-cap:`), or save it and reference `![](path.png)`. Never use
+  `IPython.display.Image` to embed a static image — it does not render.
+- **Injecting a computed value into prose:** use Quarto inline code
+  `` `{python} f"{value:.1f}"` ``. Do NOT write `{value}` as literal text, do
+  NOT invent `quarto.doc.variables(...)` (it does not exist), and do NOT
+  install `quarto`/`quartodoc` from PyPI (unrelated packages).
+- A known-good, end-to-end template lives in the `quarto-publication` skill
+  (`assets/report-template.qmd` + `assets/_environment`). Copy it rather than
+  reconstructing these patterns.
+
+## Data integrity & S3 streaming — non-negotiable
+
+- **Every number, table and value in a report is computed from the data at
+  render time.** Never transcribe, guess, or hard-code figures into the
+  document or a `params`/YAML file. A precomputed value must come from a
+  reproducible pipeline artifact, not be typed by the agent.
+- Before reporting a statistic, sanity-check unit and range (a monthly median
+  disposable income is in €, not thousands; a rate is in %). Encode these as
+  `pandera`/`pointblank` checks (skill `data-validation`).
+- If two computations disagree, STOP and reconcile — report neither number
+  until the discrepancy is understood.
+- **Stream from S3 first, copy locally last.** Read data lazily/in memory from
+  S3 (`s3fs`, `duckdb`, `polars scan_parquet`, `arrow`) before anything else;
+  only `aws s3 cp` to local disk when a tool genuinely requires a file on disk
+  (details and recipes in the `onyxia-storage-s3` skill).
+
 ## Internal references (authoritative)
 - SSP Cloud platform docs: https://docs.sspcloud.fr
 - Onyxia user guide: https://docs.onyxia.sh/user-doc/user-guide
@@ -87,4 +133,5 @@ data directly into memory** from S3; only copy locally if necessary.
 When a task falls within a tooled domain, **load the corresponding skill**
 (`onyxia-storage-s3`, `mlflow-tracking`, `argo-mlops`, `r-datascience`,
 `python-datascience`, `onyxia-reproducibility`, `quarto-publication`,
-`vault-secrets-onyxia`, `git-workflow-ds`) before producing code.
+`data-validation`, `geodata`, `vault-secrets-onyxia`, `git-workflow-ds`)
+before producing code.

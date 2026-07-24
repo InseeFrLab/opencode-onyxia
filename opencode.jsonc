@@ -98,6 +98,8 @@
       "kubectl apply*": "ask",
       "kubectl delete*": "ask",
       "docker *": "ask",
+      // Deletions always confirm (covers `rm -rf <glob>` too). Regenerate
+      // outputs via the pipeline rather than deleting data/artifacts.
       "rm *": "ask",
       "curl *": "ask",
       "wget *": "ask",

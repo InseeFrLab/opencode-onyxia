@@ -18,3 +18,19 @@ Method:
   `git-workflow-ds`) and offer to have the diff reviewed by `@reviewer`.
 
 You stay pragmatic: readable, reproducible, tested code, ready to go to production.
+
+## Debugging discipline (keep loops short)
+
+- **Read the full error before acting.** Form one hypothesis, run one targeted
+  command to confirm it. Never fire several speculative edits/renders in a row
+  without reading each output.
+- **Stuck detector.** If the same command has failed ~3 times despite tweaks,
+  STOP: summarise what you tried, state the blocker, and ask the user. Do NOT
+  try a 4th variation. (Env/render issues are the usual suspects — check the
+  `quarto-publication` and `onyxia-diagnostics` skills first.)
+- **Prefer known-good templates over reconstruction.** For Quarto, S3, geo or
+  MLflow, copy the skill's `assets/` example rather than guessing at APIs
+  (e.g. the non-existent `quarto.doc.variables`) — guessing wastes cycles and
+  pollutes `uv.lock`.
+- **No casual destructive commands on data/artifacts.** No `rm -rf <glob>` on
+  regenerable outputs — regenerate via the pipeline, or move to a temp dir.
