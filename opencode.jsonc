@@ -12,6 +12,13 @@
   //  The "models" KEYS below are confirmed (curl .../api/models):
   //  gemma4-26b-moe, qwen3-6-35b-moe, qwen3-vl. The gateway does not publish
   //  context/output limits; see the note in INSTALL.md if generation truncates.
+  //
+  //  THINKING MODE: the gateway serves qwen3-6-35b-moe with thinking ON by
+  //  default (the response carries a "reasoning_content" field). We do not
+  //  rely on that default: "options.chat_template_kwargs.enable_thinking" is
+  //  pinned per model / per agent. Anything in a model's or an agent's
+  //  "options" is forwarded verbatim into the request body by the
+  //  @ai-sdk/openai-compatible provider (agent options win over model ones).
   // =========================================================================
   "provider": {
     "onyxia": {
@@ -25,6 +32,15 @@
         "qwen3-6-35b-moe": {
           "name": "Qwen3 35B MoE — code & reasoning",
           "tools": true,
+          "reasoning": true,
+          // Thinking OFF by default: the code-writing agents stay fast and
+          // spend their output budget on code, not on a reasoning trace.
+          // The `plan` agent re-enables it in its own "options" block.
+          "options": {
+            "chat_template_kwargs": {
+              "enable_thinking": false
+            }
+          },
           "limit": {
             "context": 131072,
             "output": 32768
@@ -114,6 +130,10 @@
   //  automatically based on their "description" or invoked via @name.
   //  Each agent's system prompt lives in ./prompts/<agent>.md
   //
+  //  `plan` is the only agent running in thinking mode (Qwen3): planning is
+  //  where an explicit reasoning trace pays off. `reviewer` stays on Gemma 4
+  //  on purpose — a second model gives a genuinely different point of view.
+  //
   //  python-ds / r-ds / mlops deliberately have NO tool restriction:
   //  they must execute and verify code; the global bash allowlist above
   //  (rm/curl/kubectl apply/docker/argo submit on "ask") keeps them in check.
@@ -127,8 +147,16 @@
     },
     "plan": {
       "mode": "primary",
-      "model": "onyxia/gemma4-26b-moe",
-      "temperature": 0.1,
+      "model": "onyxia/qwen3-6-35b-moe",
+      // Qwen3 thinking mode: near-greedy decoding sends the reasoning trace
+      // into repetition loops — use the sampling Qwen recommends for it.
+      "temperature": 0.6,
+      "top_p": 0.95,
+      "options": {
+        "chat_template_kwargs": {
+          "enable_thinking": true
+        }
+      },
       "prompt": "./prompts/plan.md",
       "tools": {
         "write": false,

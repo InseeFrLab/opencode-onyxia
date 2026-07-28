@@ -80,9 +80,21 @@ opencode-onyxia/
 ## Model allocation
 | Model | Role in the config |
 |---|---|
-| `qwen3-6-35b-moe` | default model — code, reasoning, agents `build`/`plan`/`python-ds`/`r-ds`/`mlops` |
+| `qwen3-6-35b-moe` | default model — agent `plan` (**thinking mode on**) and agents `build`/`python-ds`/`r-ds`/`mlops` (thinking off, faster) |
 | `gemma4-26b-moe` | `small_model` (titles, summaries) + agent `reviewer` (diverse point of view) |
 | `qwen3-vl` | agent `dataviz-vision` — reading charts, diagrams, screenshots |
+
+### Thinking mode
+The gateway serves `qwen3-6-35b-moe` with thinking **on** by default. The config does not rely
+on that: the flag is pinned explicitly with `chat_template_kwargs.enable_thinking`, off on the
+model entry and back on for the `plan` agent only. Anything placed in a model's or an agent's
+`options` block is forwarded verbatim into the request body, so to give another agent a
+reasoning trace just add:
+```jsonc
+"options": { "chat_template_kwargs": { "enable_thinking": true } }
+```
+and raise its `temperature` to ~0.6 with `"top_p": 0.95` — Qwen3 loops on repetitions when it
+reasons under near-greedy decoding.
 
 ## Bundled MCP servers (disabled by default)
 Two `remote` servers are pre-declared in `opencode.jsonc` with
