@@ -1,20 +1,128 @@
 ---
 name: insee-public-data
-description: Find and load French public data — Insee datasets (census, SIRENE, BDM macroeconomic series, local data), data.gouv.fr catalogs, and official geographic reference data (COG) — from Python, R, or via the datagouv MCP server. Prefers Parquet distributions and direct-to-duckdb ingestion. Use when the user needs an external/public dataset, an Insee series, or French administrative reference data. (keywords: données publiques, open data, recensement, communes, code officiel géographique, série)
+description: Find and load French public data — Melodi API (Insee's definitive data catalog), metadata API, s3://donnees-insee/diffusion, data.gouv.fr, pynsee, R insee. Use whenever the user needs external/public data, an Insee dataset, a statistical series, or French administrative reference data. (keywords: données publiques, open data, recensement, communes, code officiel géographique, série, Melodi, métadonnées)
 license: MIT
 ---
 
 # Sourcing French public data (Insee, data.gouv.fr)
 
-Order of preference: **Parquet distribution read lazily** (duckdb/arrow over
-HTTPS or S3) → dedicated API client (`pynsee`, R `insee`) → CSV download (last
-resort — convert to Parquet immediately, see `onyxia-storage-s3`).
+Order of preference: **Melodi API** (Insee data + metadata) → **s3://donnees-insee/diffusion** → data.gouv.fr / parquets → pynsee / R insee → CSV download (last resort).
 
-## 1. Parquet-first: query files in place
+## 1. Melodi API — Insee's reference for data
 
-Several flagship datasets are published as Parquet on data.gouv.fr /
-static mirrors (e.g. SIRENE, DVF property transactions, census extracts).
-duckdb reads them over HTTPS without downloading:
+`https://api.insee.fr/melodi/` is the **canonical** Insee data API.
+It follows the DCAT standard: each dataset has an `identifier` (e.g. `DD_CNA_AGREGATS`), distributions (CSV/JSON), and rich metadata (license, frequency, temporal coverage).
+
+### Discover datasets (DCAT catalog)
+
+```python
+import requests
+
+r = requests.get("https://api.insee.fr/melodi/catalog/dcat")
+datasets = [d for d in r.json()["@graph"] if d.get("@type") == "dcat:Dataset"]
+for ds in datasets:
+    print(f"{ds['dct:identifier']}: {ds['dct:title']}")
+```
+
+```r
+library(httr2)
+r <- req_perform(req_url("https://api.insee.fr/melodi/catalog/dcat"))
+datasets <- resp_body_json(r)[["@graph"]]
+datasets <- datasets[which(sapply(datasets, function(d) d[["@type"]] == "dcat:Dataset")), ]
+for (ds in datasets) {
+  cat(sprintf("%s: %s\n", ds[["dct:identifier"]], ds[["dct:title"]]))
+}
+```
+
+### Download a specific dataset
+
+Once you know the `identifier` (e.g. `DD_CNA_AGREGATS`), get its CSV distribution:
+
+```python
+dataset_id = "DD_CNA_AGREGATS"
+
+# Step 1: find the CSV distribution
+r = requests.get(f"https://api.insee.fr/melodi/catalog/dcat")
+ds_list = [d for d in r.json()["@graph"] if d.get("@type") == "dcat:Dataset" and d.get("dct:identifier") == dataset_id]
+if not ds_list:
+    raise ValueError(f"Dataset '{dataset_id}' not found")
+dist = [d for d in r.json()["@graph"] if d.get("@type") == "dcat:Distribution" and d.get("dct:identifier") == f"{dataset_id}_CSV_FR"]
+url = dist[0]["dcat:downloadURL"]
+
+# Step 2: download and read
+import pandas as pd
+df = pd.read_csv(url)
+```
+
+For a **single-series query** (time-series with filters), Melodi also supports direct CSV URLs:
+
+```
+https://api.insee.fr/melodi/file/<IDENTIFIER>/<DISTRIBUTION_ID>
+```
+
+> **Note:** Melodi needs an API key from https://portail-api.insee.fr
+> (store it in Vault via `vault-secrets-onyxia`; inject as env var;
+> pass via `Authorization: Basic <key>` or query param).
+
+## 2. Metadata API — understand the data
+
+`https://api.insee.fr/metadonnees/` complements Melodi by providing the **semantic context**:
+definitions, nomenclatures, and geographic hierarchies.
+
+OpenAPI spec: `https://api.insee.fr/metadonnees/openapi.json` (99 endpoints, 4 tags).
+
+| Tag | Role | Example |
+|---|---|---|
+| **nomenclatures** | Decode official codes (NAF, juridique, etc.) | `GET /codes/nafr2/classe/62.01Z` → "Programmation" |
+| **concepts** | Semantic definitions of indicators | `GET /concepts/definitions` → all defined concepts |
+| **geographie** | Administrative hierarchy tree | `GET /geo/commune/{code}` → commune info + parents/children |
+| **operations** | Survey/collection metadata | `GET /operations` → list of Insee operations |
+
+### Practical examples
+
+**Look up a NAF class code:**
+```python
+import requests
+r = requests.get("https://api.insee.fr/metadonnees/codes/nafr2/classe/62.01Z")
+print(r.json())  # → {"id": "62.01Z", "label": "Programmation", ...}
+```
+
+**Find all communes in a department:**
+```python
+r = requests.get("https://api.insee.fr/metadonnees/geo/commune?departement=75")
+# Returns list of Paris communes with INSEE codes
+```
+
+**Get concept definition (e.g. what does "PIB par habitant" mean?):**
+```python
+r = requests.get("https://api.insee.fr/metadonnees/concepts/definitions")
+# Filter for the indicator you need — labels explain units and methodology
+```
+
+Use metadata API **before** downloading from Melodi to understand:
+- what each column represents (unit of measure, frequency)
+- which geographic codes it uses (commune, IRIS, region…)
+- which nomenclatures apply (NAF rév.2, CSP, etc.)
+
+## 3. s3://donnees-insee/diffusion — shared mirrored datasets
+
+Some Insee datasets are already mirrored on the platform's MinIO bucket.
+Check before re-downloading:
+
+```bash
+aws --endpoint-url "https://$AWS_S3_ENDPOINT" s3 ls s3://donnees-insee/diffusion/
+```
+
+When the file is there, read it lazily from S3 (see `onyxia-storage-s3`).
+
+> **Why this before data.gouv.fr?** The `donnees-insee` bucket is Insee's
+> internal distribution mirror — it is updated first. If the file is there,
+> you save a network hop.
+
+## 4. Parquet-first: query files in place
+
+Several flagship datasets are published as Parquet on data.gouv.fr or
+static mirrors. duckdb reads them over HTTPS without downloading:
 
 ```sql
 INSTALL httpfs; LOAD httpfs;
@@ -24,7 +132,7 @@ SELECT dep, count(*) FROM read_parquet('https://<direct-parquet-url>') GROUP BY 
 If several analyses will hit the same file, copy it **once** to your S3 bucket
 (`aws s3 cp` / `COPY ... TO 's3://...'`), then work from S3.
 
-## 2. Finding datasets
+## 5. data.gouv.fr — secondary source
 
 - **datagouv MCP server** (`https://mcp.data.gouv.fr/mcp`): pre-declared but
   disabled in `opencode.jsonc`. Enable it per-project (never globally) with an
@@ -41,7 +149,9 @@ If several analyses will hit the same file, copy it **once** to your S3 bucket
 - Insee's own catalog: https://www.insee.fr/fr/statistiques (files) and the
   APIs below.
 
-## 3. Insee APIs from code
+## 6. Fallback APIs
+
+When you need a quick series without Melodi:
 
 **Python — `pynsee`** (`uv pip install pynsee`):
 
@@ -69,20 +179,7 @@ df <- get_insee_idbank("001769682")
 `COGugaison`/`insee`; in Python `pynsee.localdata.get_area_list()`. For
 commune boundaries: Admin Express via `get_geodata` or IGN downloads.
 
-## 4. SSP Cloud shared datasets
-
-Some reference datasets are already mirrored on the platform's MinIO —
-check before re-downloading:
-
-```bash
-aws --endpoint-url "https://$AWS_S3_ENDPOINT" s3 ls s3://donnees-insee/ 2>/dev/null \
-  || echo "bucket not accessible from this account"
-```
-
-`diffusion/` folders in any user bucket are public-readable too — a teammate
-may already have staged the file (see `onyxia-storage-s3`).
-
-## 5. Hygiene
+## 7. Hygiene
 
 - Record the **exact source URL + retrieval date** in the README or the
   ingestion script; public files move and get revised.
@@ -90,3 +187,4 @@ may already have staged the file (see `onyxia-storage-s3`).
   parameterized path.
 - Watch encodings and department codes (`2A`, `2B`, leading zeros): read codes
   as **text**, never integers.
+- API keys for Melodi / pynsee → **Vault only**, never in code.
