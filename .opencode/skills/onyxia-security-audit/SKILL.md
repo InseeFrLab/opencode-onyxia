@@ -1,8 +1,12 @@
+---
+name: onyxia-security-audit
+description: Audit a file, a diff or a whole repository for leaked credentials (AWS AKIA keys, Vault hvs. tokens, GitHub ghp_/github_pat_ tokens, hardcoded passwords and API keys, private keys, a token embedded in a git remote URL), for hardcoded S3/MinIO endpoints, buckets and usernames that should be read from the AWS_* environment variables, and for reproducibility gaps (missing uv.lock/renv.lock, missing .gitignore, unseeded randomness). Load before a commit or a push, for the /check-secrets command, or whenever the user asks to check for secrets, credentials or leaks (keywords: secret, credential, fuite, clé d'API, mot de passe, jeton, audit sécurité, avant de commiter, avant de pousser).
+license: MIT
+---
+
 # ONYXIA-SECURITY-AUDIT skill — proactive security & reproducibility checks
 
 Run a lightweight security and reproducibility audit on a file or directory.
-This skill is loaded automatically by the `reviewer` agent and is available
-to the `build` agent before committing.
 
 ## What to check
 
@@ -34,31 +38,50 @@ Detect raw S3 URLs or bucket names baked into code:
 
 ## How to run
 
-### Python files
+Two things to know before copying these:
+
+- `grep -E` is **POSIX ERE — no PCRE lookaheads.** `s3://(?!VAR)` is a syntax
+  error, not a negative match. Invert with a second pass instead.
+- `grep --include=… .` needs `-r`, otherwise `.` is just a directory argument.
+  Prefer `git grep`, which searches tracked files and needs neither.
+
 ```bash
-# Secret scanning (basic regex)
-grep -EniE '(AKIA[0-9A-Z]{14}|hvs\.|password\s*[:=]\s*"[^"]+"|secret\s*[:=]\s*"[^"]+"|api.key\s*[:=]\s*"[^"]+")' --include="*.py" .
+# 1. Credential-shaped literals in tracked files
+git grep -nEi \
+  -e 'AKIA[0-9A-Z]{16}' \
+  -e 'hvs\.[A-Za-z0-9_-]{20,}' \
+  -e 'ghp_[A-Za-z0-9]{36}' \
+  -e 'github_pat_[A-Za-z0-9_]{20,}' \
+  -e '(password|passwd|secret|api[_-]?key|token|credential)[[:space:]]*(=|:|<-)[[:space:]]*.[^"'"'"']{8,}' \
+  -e '-----BEGIN [A-Z ]*PRIVATE KEY-----' \
+  -- '*.py' '*.R' '*.qmd' '*.Rmd' '*.ipynb' '*.yaml' '*.yml' '*.toml' '*.sh' '*.env*'
 
-# Hardcoded S3/MinIO
-grep -EniE 'minio\.lab\.sspcloud\.fr|s3://(?!ENV_VAR)' --include="*.py" .
+# 2. Hardcoded MinIO endpoint or literal bucket — two passes, no lookahead:
+#    match the pattern, then drop the lines that DO read from the environment.
+git grep -nE 'minio\.lab\.sspcloud\.fr|s3://[a-z0-9][a-z0-9.-]+' -- '*.py' '*.R' '*.qmd' \
+  | grep -vE '\$\{?(USERNAME|AWS_S3_ENDPOINT)|os\.environ|getenv|Sys\.getenv'
 
-# Reproducibility
-grep -EniE '(random\.(rand|choice|seed)|set\.seed|np\.random)' --include="*.py" .
+# 3. Staged changes only (the pre-commit check)
+git diff --cached -U0 \
+  | grep -nEi 'AKIA[0-9A-Z]{16}|hvs\.|ghp_|(password|secret|token)[[:space:]]*(=|:|<-)'
+
+# 4. Recent history (last 5 commits), patches not commit subjects
+git log -p -5 --diff-filter=ACM -- '*.py' '*.R' '*.qmd' '*.yaml' \
+  | grep -nEi 'AKIA[0-9A-Z]{16}|hvs\.|ghp_|(password|secret|token)[[:space:]]*(=|:|<-)'
+
+# 5. Token embedded in a remote URL — common on throwaway pods, easy to miss
+git remote -v | grep -E 'https://[^@/]+@'
+
+# 6. Reproducibility
+ls -1 uv.lock renv.lock .gitignore 2>&1
+git grep -nE 'random\.(rand|choice|seed)|np\.random|set\.seed' -- '*.py' '*.R'
 ```
 
-### R files
-```bash
-grep -EniE '(password\s*<-?\s*"[^"]+"|secret\s*<-?\s*"[^"]+"|api.key\s*<-?\s*"[^"]+")' --include="*.R" .
-grep -EniE 'minio\.lab\.sspcloud\.fr|s3://(?!ENV_VAR)' --include="*.R" .
-grep -EniE 'set\.seed' --include="*.R" .
-```
+Every one of these exits **1 when it finds nothing**, which is the good case —
+do not report a non-zero exit as a failure.
 
-### Git history scan
-```bash
-# Check staged + recent history
-git diff --cached --diff-filter=ACM | grep -EiE '(AKIA|hvs\.|password\s*[:=]\s*")'
-git log -5 --oneline --diff-filter=ACM -- '*.py' '*.R' | xargs git diff --cached --diff-filter=ACM -G -E '(AKIA|hvs\.|password\s*[:=]\s*")' 2>/dev/null
-```
+**Never print a matched secret in full.** Show enough to locate it:
+`src/train.py:42  password = "P@ss…"`.
 
 ## Output
 
@@ -77,7 +100,7 @@ Classify:
 - 🟡 **warning** — should fix (reproducibility gaps, missing lockfile)
 - 🟢 **info** — nice-to-have (Parquet suggestion, seed recommendation)
 
-## When this skill is loaded
-- Automatically by `reviewer` subagent
-- Automatically by `build` before any commit
-- Manually: ask to "audit the repo for security and reproducibility"
+If a real secret is found: **revoke/rotate it first**, then purge it from the
+history — in that order, because a pushed secret must be assumed compromised.
+See the `git-workflow-ds` skill for the purge, and `vault-secrets-onyxia` for
+where the value should have lived.

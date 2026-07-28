@@ -54,10 +54,25 @@ def connect(path: str) -> duckdb.DuckDBPyConnection:
     return con
 
 
+def sql_literal(value: str) -> str:
+    """Quote a value as a SQL string literal (duckdb escapes ' by doubling it).
+
+    The path comes from argv and cannot be passed as a bind parameter here — it
+    is part of the FROM clause, not a value — so it must be escaped by hand.
+    """
+    return "'" + value.replace("'", "''") + "'"
+
+
+def sql_identifier(name: str) -> str:
+    """Quote a column name as a SQL identifier (duckdb doubles the ")."""
+    return '"' + name.replace('"', '""') + '"'
+
+
 def source_sql(path: str) -> str:
+    lit = sql_literal(path)
     if path.endswith((".csv", ".csv.gz")):
-        return f"read_csv('{path}', sample_size = -1)"
-    return f"read_parquet('{path}', hive_partitioning = true)"
+        return f"read_csv({lit}, sample_size = -1)"
+    return f"read_parquet({lit}, hive_partitioning = true)"
 
 
 def main() -> None:
@@ -106,9 +121,9 @@ def main() -> None:
         if "VARCHAR" in str(ctype) and approx and int(approx) <= CATEGORICAL_MAX_CARDINALITY:
             print(f"\n### {col}")
             q(
-                f'SELECT "{col}", count(*) AS n, '
+                f"SELECT {sql_identifier(col)}, count(*) AS n, "
                 f"round(100.0 * count(*) / {n_rows}, 1) AS pct "
-                f'FROM {src} GROUP BY 1 ORDER BY 2 DESC LIMIT {TOP_N_CATEGORICAL}'
+                f"FROM {src} GROUP BY 1 ORDER BY 2 DESC LIMIT {TOP_N_CATEGORICAL}"
             ).show()
 
     print("\nDone. Dig deeper where null rates, cardinalities, or ranges look suspicious.")

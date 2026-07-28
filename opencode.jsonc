@@ -71,14 +71,61 @@
   // ---- Default agent at startup ----
   "default_agent": "plan",
   // =========================================================================
+  //  CONTEXT BUDGET — 131k window, data science tool output.
+  //  A single duckdb SUMMARIZE, a verbose pytest run or a kubectl logs easily
+  //  exceeds the defaults (2000 lines / 50 KB) and burns >10k tokens per call.
+  //  Truncated output is NOT lost: OpenCode writes the full text under
+  //  ~/.local/share/opencode/tool-output/ and gives the model the path.
+  //  CAVEAT: truncation keeps the HEAD, so prompts must bound output at the
+  //  source (`| tail -n 30`) — pytest puts its verdict at the END.
+  // =========================================================================
+  "tool_output": {
+    "max_lines": 200,
+    "max_bytes": 20000
+  },
+  "compaction": {
+    "auto": true,
+    // Off by default: without it, stale tool outputs are carried for the whole
+    // session. This is the single biggest context-rot win for DS work.
+    "prune": true,
+    // Keep the last 4 user turns verbatim (default 2).
+    "tail_turns": 4
+  },
+  "experimental": {
+    // The reviewer hard-denies anything off its allowlist; a denial should make
+    // the agent adapt, not end the turn.
+    "continue_loop_on_deny": true
+  },
+  // =========================================================================
   //  PERMISSIONS — OpenCode is NOT sandboxed: every `bash` runs on the pod.
   //  Common data science tooling is broadly allowed; anything destructive or
   //  outbound (network, k8s mutations, rm) asks for confirmation.
+  //
+  //  ⚠ ORDER IS SEMANTIC. OpenCode evaluates the LAST matching rule
+  //  (`rules.findLast(...)`), so the layout must be:
+  //      1. the "*" catch-all FIRST,
+  //      2. then the broad allows,
+  //      3. then the narrow re-restrictions LAST.
+  //  Putting "*" at the end — as this file used to — makes every rule above it
+  //  dead and silently collapses the whole block into `"bash": "ask"`.
   // =========================================================================
   "permission": {
-    "edit": "allow",
+    // NOTE: "edit" is deliberately NOT granted globally. A subagent inherits
+    // the permission set of the session that spawned it, merged AFTER its own
+    // rules — so a global `"edit": "allow"` silently overrides a subagent's
+    // `"edit": "deny"` and the read-only agents stop being read-only. Grant
+    // "edit" per agent instead (build / python-ds / r-ds / mlops below).
     "webfetch": "ask",
+    // Delegation: allow the purpose-built subagents, refuse the generic
+    // "general" one — it has full write permission and no Onyxia context, so
+    // it is never the right delegate here.
+    "task": {
+      "*": "allow",
+      "general": "deny"
+    },
     "bash": {
+      "*": "ask",
+      // ---- broad allows: routine, non-destructive DS tooling ----
       "git *": "allow",
       "uv *": "allow",
       "pip *": "allow",
@@ -92,34 +139,44 @@
       "R -e *": "allow",
       "quarto *": "allow",
       "make *": "allow",
+      "just *": "allow",
       "mc *": "allow",
       "aws s3*": "allow",
       "mlflow *": "allow",
       "duckdb *": "allow",
-      // Vault: read-only allowed; put/delete fall through to "*": "ask".
+      // Vault: read-only only; put/delete fall back to the "*" catch-all.
       "vault kv get*": "allow",
       "vault kv list*": "allow",
-      // Argo: browsing is free, but submitting a workflow launches containers
-      // on the cluster -> confirmation (consistent with kubectl apply).
+      // Argo / kubectl: browsing is free; mutations are re-restricted below.
       "argo list*": "allow",
       "argo get*": "allow",
       "argo logs*": "allow",
       "argo watch*": "allow",
-      "argo submit*": "ask",
-      "argo *": "ask",
       "kubectl get*": "allow",
       "kubectl describe*": "allow",
       "kubectl logs*": "allow",
       "kubectl top*": "allow",
+      // ---- narrow re-restrictions: MUST stay after the allows ----
+      // Outbound or irreversible: leaving the pod, or destroying local state.
+      "git push*": "ask",
+      "git reset --hard*": "ask",
+      "git clean*": "ask",
+      // Submitting a workflow launches containers on the cluster.
+      "argo submit*": "ask",
+      "argo delete*": "ask",
       "kubectl apply*": "ask",
+      "kubectl create*": "ask",
       "kubectl delete*": "ask",
       "docker *": "ask",
+      // S3 writes/deletes: `ls`/`cp` inward stay free via "aws s3*" above.
+      "aws s3 rm*": "ask",
+      "aws s3 sync*": "ask",
+      "mc rm*": "ask",
       // Deletions always confirm (covers `rm -rf <glob>` too). Regenerate
       // outputs via the pipeline rather than deleting data/artifacts.
       "rm *": "ask",
       "curl *": "ask",
-      "wget *": "ask",
-      "*": "ask"
+      "wget *": "ask"
     },
     "skill": {
       "*": "allow"
@@ -134,6 +191,18 @@
   //  where an explicit reasoning trace pays off. `reviewer` stays on Gemma 4
   //  on purpose — a second model gives a genuinely different point of view.
   //
+  //  ⚠ "prompt" is inline prompt TEXT, not a path. A bare "./prompts/x.md" is
+  //  sent to the model verbatim as a 19-character system prompt. Use
+  //  {file:...}: it resolves relative to THIS file's directory (so the same
+  //  string works in the repo and in ~/.config/opencode) and OpenCode refuses
+  //  to start if the target is missing. Setting "prompt" also replaces
+  //  OpenCode's own built-in system prompt, which is why every agent starts
+  //  from ./prompts/shared/base.md.
+  //
+  //  ./prompts/shared/completion-contract.md goes ONLY to the agents that
+  //  change files. `reviewer` grades against that contract — it must not be
+  //  told when it may declare itself done.
+  //
   //  python-ds / r-ds / mlops deliberately have NO tool restriction:
   //  they must execute and verify code; the global bash allowlist above
   //  (rm/curl/kubectl apply/docker/argo submit on "ask") keeps them in check.
@@ -143,7 +212,10 @@
       "mode": "primary",
       "model": "onyxia/qwen3-6-35b-moe",
       "temperature": 0.2,
-      "prompt": "./prompts/build.md"
+      "prompt": "{file:./prompts/shared/base.md}\n\n{file:./prompts/build.md}\n\n{file:./prompts/shared/completion-contract.md}",
+      "permission": {
+        "edit": "allow"
+      }
     },
     "plan": {
       "mode": "primary",
@@ -157,14 +229,25 @@
           "enable_thinking": true
         }
       },
-      "prompt": "./prompts/plan.md",
-      "tools": {
-        "write": false,
-        "edit": false
-      },
+      "prompt": "{file:./prompts/shared/base.md}\n\n{file:./prompts/plan.md}",
       "permission": {
+        // Read-only EXCEPT its own plan files: that is where the acceptance
+        // list and the evidence log live, and `build` reads them from there.
+        // Must be explicit — the global `"edit": "allow"` merges in and the
+        // last matching rule wins.
+        "edit": {
+          "*": "deny",
+          ".opencode/plans/*.md": "allow"
+        },
         "bash": {
-          "*": "ask"
+          "*": "ask",
+          "git status": "allow",
+          "git log*": "allow",
+          "git diff*": "allow",
+          "ls *": "allow",
+          "aws s3 ls*": "allow",
+          "mc ls*": "allow",
+          "duckdb *": "allow"
         }
       }
     },
@@ -173,46 +256,105 @@
       "description": "Python data science / ML specialist on Onyxia (uv, ruff, polars, pandas, scikit-learn, pyarrow, s3fs). Use to write or refactor Python code for analysis, modelling, or pipelines.",
       "model": "onyxia/qwen3-6-35b-moe",
       "temperature": 0.2,
-      "prompt": "./prompts/python-ds.md"
+      "prompt": "{file:./prompts/shared/base.md}\n\n{file:./prompts/python-ds.md}\n\n{file:./prompts/shared/completion-contract.md}",
+      "permission": {
+        "edit": "allow"
+      }
     },
     "r-ds": {
       "mode": "subagent",
       "description": "R data science specialist (tidyverse, data.table, targets, renv, testthat, aws.s3, arrow). Use for any R code for analysis, modelling, or reproducible pipelines.",
       "model": "onyxia/qwen3-6-35b-moe",
       "temperature": 0.2,
-      "prompt": "./prompts/r-ds.md"
+      "prompt": "{file:./prompts/shared/base.md}\n\n{file:./prompts/r-ds.md}\n\n{file:./prompts/shared/completion-contract.md}",
+      "permission": {
+        "edit": "allow"
+      }
     },
     "mlops": {
       "mode": "subagent",
       "description": "Onyxia MLOps engineer: MLflow experiment tracking, parallel training via Argo Workflows (argo submit, CronWorkflow), GitOps deployment via ArgoCD, model packaging and productionization. Use to industrialize/deploy a model or schedule recurring jobs.",
       "model": "onyxia/qwen3-6-35b-moe",
       "temperature": 0.2,
-      "prompt": "./prompts/mlops.md"
+      "prompt": "{file:./prompts/shared/base.md}\n\n{file:./prompts/mlops.md}\n\n{file:./prompts/shared/completion-contract.md}",
+      "permission": {
+        "edit": "allow"
+      }
     },
     "reviewer": {
       "mode": "subagent",
-      "description": "Read-only code reviewer: quality, reproducibility, security (no hardcoded secrets), R/Python best practices. Use to review a diff or a module before a commit.",
+      "description": "Fresh-context grader AND code reviewer (read-only). Give it the path to an acceptance file (usually .opencode/plans/<slug>.md) plus `git diff --stat`: it re-runs every check itself and returns PASS/FAIL per acceptance item (blocking), followed by quality/reproducibility/security findings (advisory). Invoke at the END of any task that changed a file, before telling the user it is done. Never edits, never commits, never deploys.",
       "model": "onyxia/gemma4-26b-moe",
-      "temperature": 0.1,
-      "prompt": "./prompts/reviewer.md",
-      "tools": {
-        "write": false,
-        "edit": false,
-        "bash": false
-      },
+      // Grading should be reproducible, not creative.
+      "temperature": 0,
+      "steps": 40,
+      "prompt": "{file:./prompts/shared/base.md}\n\n{file:./prompts/reviewer.md}",
       "permission": {
+        "edit": "deny",
+        "webfetch": "deny",
+        "websearch": "deny",
+        "task": "deny",
+        // Catch-all is "deny", not "ask": a subagent has no user to ask, so an
+        // "ask" here would stall. Same ordering rule as the global block —
+        // broad first, narrow last.
         "bash": {
-          // Read-only diagnostics — no file mutation, no network, no rm
-          "ruff *lint*": "allow",
-          "ruff check *": "allow",
-          "ruff format --check *": "allow",
+          "*": "deny",
+          // -- inspect
+          "ls *": "allow",
+          "cat *": "allow",
+          "head *": "allow",
+          "tail *": "allow",
+          "wc *": "allow",
+          "grep *": "allow",
+          "rg *": "allow",
+          "find *": "allow",
+          "git status": "allow",
+          "git status*": "allow",
+          "git diff*": "allow",
+          "git log*": "allow",
+          "git show*": "allow",
+          // -- actually re-run the checks (this is the point of the agent)
+          "uv run *": "allow",
+          "uv sync*": "allow",
+          "uv tree*": "allow",
+          "python *": "allow",
+          "python3 *": "allow",
+          "pytest*": "allow",
+          "ruff *": "allow",
           "mypy *": "allow",
-          "python -m py_compile *": "allow",
-          "python -m pytest --collect-only *": "allow",
-          "python -m pytest -q --collect-only *": "allow",
-          "Rscript -e *": "allow",
+          "Rscript *": "allow",
           "R -e *": "allow",
-          "*": "ask"
+          "quarto render*": "allow",
+          "quarto check*": "allow",
+          "duckdb *": "allow",
+          "mlflow *": "allow",
+          "aws s3 ls*": "allow",
+          "mc ls*": "allow",
+          "make *": "allow",
+          "just *": "allow",
+          // -- narrow denies AFTER the allows: nothing mutating, nothing
+          //    outbound, no dependency changes. `uv run *` still lets it
+          //    execute project code — irreducible, since re-running the tests
+          //    IS the job; this list blocks the categorically wrong actions
+          //    rather than pretending to sandbox.
+          "git commit*": "deny",
+          "git push*": "deny",
+          "git checkout*": "deny",
+          "git reset*": "deny",
+          "git clean*": "deny",
+          "rm *": "deny",
+          "mv *": "deny",
+          "aws s3 cp*": "deny",
+          "aws s3 rm*": "deny",
+          "aws s3 sync*": "deny",
+          "mc cp*": "deny",
+          "mc rm*": "deny",
+          "argo submit*": "deny",
+          "kubectl apply*": "deny",
+          "kubectl delete*": "deny",
+          "docker *": "deny",
+          "pip install*": "deny",
+          "uv add*": "deny"
         }
       }
     },
@@ -221,11 +363,12 @@
       "description": "Visual analysis (vision model): reads screenshots, matplotlib/ggplot charts, architecture diagrams, or dashboards to interpret them or suggest improvements. Use whenever an image is provided.",
       "model": "onyxia/qwen3-vl",
       "temperature": 0.3,
-      "prompt": "./prompts/dataviz-vision.md",
-      "tools": {
-        "write": false,
-        "edit": false,
-        "bash": false
+      "prompt": "{file:./prompts/dataviz-vision.md}",
+      "permission": {
+        "edit": "deny",
+        "bash": "deny",
+        "task": "deny",
+        "webfetch": "deny"
       }
     }
   },

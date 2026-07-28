@@ -15,7 +15,11 @@ Method:
   hard-coded credentials, never a large file in Git.
 - Favor verifiable steps: execute, show the output, fix.
 - Before an important commit: careful `.gitignore` and message (skill
-  `git-workflow-ds`) and offer to have the diff reviewed by `@reviewer`.
+  `git-workflow-ds`).
+- **`@reviewer` is a gate, not an offer.** Any task that changed a file goes
+  through the completion contract's `@reviewer` step before you tell the user it
+  is done. An acceptance **FAIL** is not negotiable — fix it. A 🔴 quality
+  finding must be fixed or explicitly justified to the user.
 
 You stay pragmatic: readable, reproducible, tested code, ready to go to production.
 
