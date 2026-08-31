@@ -10,10 +10,11 @@
   //    -> Fallback if /v1 is absent: https://llm.lab.sspcloud.fr/api  (see INSTALL.md)
   //
   //  The "models" KEYS below are confirmed (curl .../api/models):
-  //  gemma4-26b-moe, qwen3-6-35b-moe, qwen3-vl. The gateway does not publish
+  //  gemma4-26b-moe, qwen3-8-27b, qwen3-6-35b-moe, qwen3-vl, qwen3-cursor,
+  //  qwen3-embedding-8b, qwen-36. The gateway does not publish
   //  context/output limits; see the note in INSTALL.md if generation truncates.
   //
-  //  THINKING MODE: the gateway serves qwen3-6-35b-moe with thinking ON by
+  //  THINKING MODE: the gateway serves qwen3-8-27b with thinking ON by
   //  default (the response carries a "reasoning_content" field). We do not
   //  rely on that default: "options.chat_template_kwargs.enable_thinking" is
   //  pinned per model / per agent. Anything in a model's or an agent's
@@ -29,8 +30,8 @@
         "apiKey": "{env:OPENAI_API_KEY}"
       },
       "models": {
-        "qwen3-6-35b-moe": {
-          "name": "Qwen3 35B MoE — code & reasoning",
+        "qwen3-8-27b": {
+          "name": "Qwen3 27B MoE — code & reasoning",
           "tools": true,
           "reasoning": true,
           // Thinking OFF by default: the code-writing agents stay fast and
@@ -66,7 +67,7 @@
     }
   },
   // ---- Default model + small model (titles, summaries, compaction) ----
-  "model": "onyxia/qwen3-6-35b-moe",
+  "model": "onyxia/qwen3-8-27b",
   "small_model": "onyxia/gemma4-26b-moe",
   // ---- Default agent at startup ----
   "default_agent": "plan",
@@ -210,7 +211,7 @@
   "agent": {
     "build": {
       "mode": "primary",
-      "model": "onyxia/qwen3-6-35b-moe",
+      "model": "onyxia/qwen3-8-27b",
       "temperature": 0.2,
       "prompt": "{file:./prompts/shared/base.md}\n\n{file:./prompts/build.md}\n\n{file:./prompts/shared/completion-contract.md}",
       "permission": {
@@ -219,7 +220,7 @@
     },
     "plan": {
       "mode": "primary",
-      "model": "onyxia/qwen3-6-35b-moe",
+      "model": "onyxia/qwen3-8-27b",
       // Qwen3 thinking mode: near-greedy decoding sends the reasoning trace
       // into repetition loops — use the sampling Qwen recommends for it.
       "temperature": 0.6,
@@ -254,7 +255,7 @@
     "python-ds": {
       "mode": "subagent",
       "description": "Python data science / ML specialist on Onyxia (uv, ruff, polars, pandas, scikit-learn, pyarrow, s3fs). Use to write or refactor Python code for analysis, modelling, or pipelines.",
-      "model": "onyxia/qwen3-6-35b-moe",
+      "model": "onyxia/qwen3-8-27b",
       "temperature": 0.2,
       "prompt": "{file:./prompts/shared/base.md}\n\n{file:./prompts/python-ds.md}\n\n{file:./prompts/shared/completion-contract.md}",
       "permission": {
@@ -264,7 +265,7 @@
     "r-ds": {
       "mode": "subagent",
       "description": "R data science specialist (tidyverse, data.table, targets, renv, testthat, aws.s3, arrow). Use for any R code for analysis, modelling, or reproducible pipelines.",
-      "model": "onyxia/qwen3-6-35b-moe",
+      "model": "onyxia/qwen3-8-27b",
       "temperature": 0.2,
       "prompt": "{file:./prompts/shared/base.md}\n\n{file:./prompts/r-ds.md}\n\n{file:./prompts/shared/completion-contract.md}",
       "permission": {
@@ -274,7 +275,7 @@
     "mlops": {
       "mode": "subagent",
       "description": "Onyxia MLOps engineer: MLflow experiment tracking, parallel training via Argo Workflows (argo submit, CronWorkflow), GitOps deployment via ArgoCD, model packaging and productionization. Use to industrialize/deploy a model or schedule recurring jobs.",
-      "model": "onyxia/qwen3-6-35b-moe",
+      "model": "onyxia/qwen3-8-27b",
       "temperature": 0.2,
       "prompt": "{file:./prompts/shared/base.md}\n\n{file:./prompts/mlops.md}\n\n{file:./prompts/shared/completion-contract.md}",
       "permission": {
