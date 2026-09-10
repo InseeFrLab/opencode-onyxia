@@ -127,6 +127,13 @@
     "bash": {
       "*": "ask",
       // ---- broad allows: routine, non-destructive DS tooling ----
+      "find *": "allow",
+      "grep *": "allow",
+      "head *": "allow",
+      "echo *": "allow",
+      "ls *": "allow",
+      "sort *": "allow",
+      "cat *": "allow",
       "git *": "allow",
       "uv *": "allow",
       "pip *": "allow",
