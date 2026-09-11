@@ -48,17 +48,16 @@ opencode-onyxia/
    `https://llm.lab.sspcloud.fr` (Settings → Account → API Keys), then set the
    two environment variables:
    ```bash
-   export OPENAI_BASE_URL="https://llm.lab.sspcloud.fr/v1"
+   export OPENAI_BASE_URL="https://llm.lab.sspcloud.fr/api"
    export OPENAI_API_KEY="sk-……"
    ```
    (Ideally stored in Vault and injected by the service.)
-4. **Check the endpoint** (Open WebUI exposes `/v1` *and* `/api`):
+4. **Check the endpoint**:
    ```bash
    curl -s "$OPENAI_BASE_URL/chat/completions" \
      -H "Authorization: Bearer $OPENAI_API_KEY" -H "Content-Type: application/json" \
      -d '{"model":"qwen3-6-35b-moe","messages":[{"role":"user","content":"ping"}],"max_tokens":5}'
    ```
-   A `chat.completion` response → `/v1` is correct; `404` → use `…/api`.
    The model ids (`qwen3-6-35b-moe`, `gemma4-26b-moe`, `qwen3-vl`) are
    confirmed and already present in the config.
 5. **Launch**: `opencode` then `/models` to confirm the models are listed.

@@ -39,14 +39,10 @@ In `https://llm.lab.sspcloud.fr`: profile menu -> **Settings** -> **Account** ->
 Put them in `~/.bashrc` so they apply to every service:
 
 ```bash
-echo 'export OPENAI_BASE_URL="https://llm.lab.sspcloud.fr/v1"' >> ~/.bashrc
+echo 'export OPENAI_BASE_URL="https://llm.lab.sspcloud.fr/api"' >> ~/.bashrc
 echo 'export OPENAI_API_KEY="sk-……"' >> ~/.bashrc
 source ~/.bashrc
 ```
-
-> Open WebUI exposes `/v1` (the OpenAI-compatible layer OpenCode expects) *and*
-> `/api` (native API). If `…/v1/chat/completions` returns `404`, fall back to
-> `…/api` (curl test in step 4 of the README).
 
 > Recommended: store the key in **Vault** (Onyxia's "Mes secrets" tab) and
 > inject it as an environment variable when creating services — the key then

@@ -61,6 +61,6 @@ fi
 echo "✓ Installed."
 echo
 echo "Remaining steps (one time only):"
-echo "  export OPENAI_BASE_URL=\"https://llm.lab.sspcloud.fr/v1\""
+echo "  export OPENAI_BASE_URL=\"https://llm.lab.sspcloud.fr/api\""
 echo "  export OPENAI_API_KEY=\"sk-……\"   # Open WebUI key"
 echo "Then, from any project:  opencode  →  /models"
