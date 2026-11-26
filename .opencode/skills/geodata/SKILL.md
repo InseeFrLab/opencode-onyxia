@@ -9,7 +9,8 @@ license: MIT
 Geospatial work reuses the platform's normal data path: stream from S3, keep
 one reproducible file format, and render maps inside a Quarto cell. Load
 `onyxia-storage-s3` (streaming) and `quarto-publication` (rendering) alongside
-this skill.
+this skill. For spatial SQL in DuckDB (joins, distances in metres, H3) and Overture Maps, read
+`references/duckdb-spatial.md`.
 
 ## Storage: GeoParquet, not a CSV+GeoJSON split
 

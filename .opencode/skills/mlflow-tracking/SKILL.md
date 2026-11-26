@@ -1,6 +1,6 @@
 ---
 name: mlflow-tracking
-description: Track experiments and manage models with the shared MLflow instance on Onyxia/SSP Cloud — logging parameters/metrics/artifacts, autolog, run comparison (search_runs), model registry and loading, in Python and R. Load whenever training a model, comparing runs, or when the task mentions tracking, experiment, MLFLOW_TRACKING_URI, registry or model versioning. (keywords: suivi d'expériences, journaliser, registre de modèles, versionnage de modèles)
+description: Track experiments and manage models with the shared MLflow instance on Onyxia/SSP Cloud — logging parameters/metrics/artifacts, autolog, run comparison (search_runs), model registry and loading, in Python and R. Load whenever training a model, comparing runs, or when the task mentions tracking, experiment, MLFLOW_TRACKING_URI, registry or model versioning. Classic ML only: for LLM/RAG/agent apps (traces, judges, evaluation) use mlflow-trace-instrumentation / mlflow-evaluation. (keywords: suivi d'expériences, journaliser, registre de modèles, versionnage de modèles)
 license: MIT
 ---
 

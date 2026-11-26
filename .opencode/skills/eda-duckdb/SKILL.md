@@ -25,6 +25,13 @@ CREATE OR REPLACE SECRET onyxia (
 );
 ```
 
+**The platform usually pre-provisions this already**: a persistent secret `s3_onyxia_connection`
+(scope `s3://`) makes plain `s3://...` paths work in the DuckDB CLI. Check with
+`SELECT name, persistent FROM duckdb_secrets();`, and create the temporary secret above when it is missing or
+stale (403). Never create an S3 secret with `PROVIDER credential_chain` alone or an unscoped region secret:
+it ignores the MinIO endpoint (or targets AWS) and *shadows* the working secret — see
+`references/s3-explore.md`.
+
 In Python, `duckdb.connect()` then run the same SQL (or use
 `duckdb.sql(...)`). In R, `DBI::dbConnect(duckdb::duckdb())` then `dbExecute()`
 the same statements. A 403 error here = expired 7-day token → see the
@@ -82,6 +89,14 @@ row-level plots. In Python, `duckdb.sql("...").pl()` / `.df()` hands the
 - For a shareable report, put the findings in a Quarto document
   (see the `quarto-publication` skill), one section per checklist item, with
   the SQL used — that makes the EDA reproducible.
+
+## 6. More recipes (load only when needed)
+
+- `references/friendly-sql.md` — idiomatic DuckDB SQL (`GROUP BY ALL`, `QUALIFY`, `PIVOT`, `ASOF`, top-N...).
+- `references/safe-query.md` — bound the output first (size guard) and sandboxed local/S3 queries.
+- `references/s3-explore.md` — list a prefix, Parquet row counts from metadata, preview any format (`read_any`).
+- `references/convert.md` — CSV/Excel/JSON <-> Parquet, partitioned writes, writing to S3.
+- Unsure of a function, option or error message → the `duckdb-docs` skill (never guess syntax).
 
 ## Pitfalls
 

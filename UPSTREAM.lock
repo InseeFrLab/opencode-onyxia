@@ -1,0 +1,5 @@
+# Pinned upstream revisions of the third-party skills vendored in .opencode/skills (see THIRD_PARTY.md).
+# Format: <name> <repository> <commit SHA>
+# Read by scripts/vendor_mlflow_skills.py. Bump a SHA only after reviewing the upstream diff.
+duckdb-skills https://github.com/duckdb/duckdb-skills 44dfbbb414e54187964a2212eae28495f6ae21d9
+mlflow-skills https://github.com/mlflow/skills 630316930230d971e3c555c0be0279506a91c069
