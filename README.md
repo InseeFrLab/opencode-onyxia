@@ -12,16 +12,23 @@ opencode-onyxia/
 ├── AGENTS.md                      # Onyxia context shared by ALL agents (loaded automatically)
 ├── install.sh                     # GLOBAL install into ~/.config/opencode (all projects)
 ├── INSTALL.md                     # detailed install guide
+├── THIRD_PARTY.md  UPSTREAM.lock  # skills adapted from duckdb/duckdb-skills (MIT) and mlflow/skills (Apache-2.0)
+├── licenses/                      # upstream licenses
+├── scripts/vendor_mlflow_skills.py# re-creates the vendored mlflow-* skills from the pinned upstream revision
 ├── prompts/                       # one system prompt per agent
 │   ├── build.md  plan.md  python-ds.md  r-ds.md  mlops.md  reviewer.md  dataviz-vision.md
 └── .opencode/
     ├── commands/                  # slash commands (/new-project, /check-secrets, /diagnose)
     └── skills/                    # know-how loaded on demand (1 folder = 1 skill)
         ├── onyxia-storage-s3/     # S3/MinIO access (+ references/, scripts/check_s3.sh)
-        ├── eda-duckdb/            # exploratory analysis over S3 (+ scripts/profile_parquet.py)
+        ├── eda-duckdb/            # exploratory analysis over S3 (+ scripts/profile_parquet.py,
+        │                          #   references/: friendly SQL, safe/bounded queries, S3 explore, convert)
+        ├── duckdb-docs/           # DuckDB syntax lookup: local catalog + official docs search (scripts/search_docs.py)
         ├── data-validation/       # data quality checks (pandera, pointblank, duckdb)
         ├── insee-public-data/     # French public data (Insee, data.gouv.fr, COG)
-        ├── mlflow-tracking/       # experiment tracking, run comparison, registry
+        ├── mlflow-tracking/       # experiment tracking, run comparison, registry (classic ML)
+        ├── mlflow-docs/ mlflow-trace-instrumentation/ mlflow-trace-retrieval/
+        │   mlflow-trace-analysis/ mlflow-evaluation/   # LLM-app tracing & evaluation (adapted from mlflow/skills)
         ├── argo-mlops/            # industrialization (+ references/, assets/workflow-template.yaml)
         ├── onyxia-diagnostics/    # runbook: red service, 403, OOM, failed workflow
         ├── python-datascience/    # Python standards (uv, ruff, pytest, polars…)
@@ -95,9 +102,10 @@ on that: `chat_template_kwargs.enable_thinking` is pinned to `false` on the mode
 > model **variants** (`providers.onyxia.models.<model>.variants`), and an agent selects one with
 > `provider/model#variant`, e.g. `"model": "onyxia/qwen3-8-27b#plan"`.
 
-To give another agent a reasoning trace, point it at the `#plan` variant (thinking on,
-`temperature` 0.6, `top_p` 0.95 — Qwen3 loops on repetitions when it reasons under near-greedy
-decoding), or add a variant:
+To get a reasoning trace on another agent, point it at the `#plan` variant, or pick the `#think` variant of
+`onyxia/qwen3-8-27b` for a session (same settings, usable on any agent): thinking on with the sampling Qwen
+recommends for it — `temperature` 0.6, `top_p` 0.95, `top_k` 20, `min_p` 0 (Qwen3 loops on repetitions when it
+reasons under near-greedy decoding). Or add your own variant:
 ```jsonc
 "variants": [
   { "id": "deep", "body": { "temperature": 0.6, "top_p": 0.95,
@@ -116,6 +124,13 @@ longer read these files. Things that behave differently from the v1 version of t
 - permission actions renamed: `bash` → `shell`, `task` → `subagent`.
 
 Official guide: <https://opencode.ai/docs/migrate-v1/>.
+
+## Third-party skills
+Some skills are adapted from official upstream projects — **DuckDB** ([duckdb/duckdb-skills](https://github.com/duckdb/duckdb-skills),
+MIT) and **MLflow** ([mlflow/skills](https://github.com/mlflow/skills), Apache-2.0) — and corrected for Onyxia
+(MinIO credentials, DuckDB 1.5 vs 2.0, models kept on the platform gateway). `THIRD_PARTY.md` lists what was taken,
+what changed and the pinned revisions. The MLflow GenAI skills (`mlflow-trace-*`, `mlflow-evaluation`) need an
+**MLflow >= 3 server**: they check `MLFLOW_TRACKING_URI`'s version first and stop if it is older or unreachable.
 
 ## Bundled MCP servers (disabled by default)
 Two `remote` servers are pre-declared in `opencode.jsonc` with
