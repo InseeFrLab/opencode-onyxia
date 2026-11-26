@@ -177,8 +177,10 @@ After a `git pull` of the repository, simply rerun:
 
 ## Notes
 
-- OpenCode is not sandboxed: `shell` commands run on the pod. The permissions in
-  `opencode.jsonc` ask for confirmation for network, k8s mutations and `rm`.
+- OpenCode is not sandboxed: `shell` commands run on the pod. Routine commands run without
+  prompts; `opencode.jsonc` asks for `rm`, `git push`, publishing to `diffusion/`, cluster mutations and uploads,
+  and hard-denies `sudo` and remote deletions (README, "Permissions"). Check changes with
+  `python3 -I scripts/check_permissions.py`.
 - The models being self-hosted, exchanges stay within the Insee perimeter.
 - The gateway does not publish context/output token limits; the `limit` values
   in `opencode.jsonc` are conservative estimates. If long generations truncate
