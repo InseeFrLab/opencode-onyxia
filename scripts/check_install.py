@@ -16,6 +16,7 @@ import subprocess
 import sys
 import tarfile
 import tempfile
+import time
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parent.parent
@@ -321,12 +322,16 @@ def main() -> int:
                 sb.start()
                 warn = sb.run("debug", "config").stderr.strip()
                 check("opencode loads the bare config without warnings", warn == "", warn[:200])
-                models = {m["id"] for m in sb.get_data("/api/model") if m.get("providerID") == "onyxia"}
-                check(
-                    "the 3 onyxia models are available",
-                    models == set(full_cfg["providers"]["onyxia"]["models"]),
-                    str(sorted(models)),
-                )
+                # The first request for a directory starts a fresh opencode instance, which (seen with v2.4.2)
+                # can answer /api/model before the config-defined `onyxia` provider is registered: poll.
+                want_models = set(full_cfg["providers"]["onyxia"]["models"])
+                deadline = time.monotonic() + 30
+                while True:
+                    models = {m["id"] for m in sb.get_data("/api/model") if m.get("providerID") == "onyxia"}
+                    if models == want_models or time.monotonic() > deadline:
+                        break
+                    time.sleep(0.5)
+                check("the 3 onyxia models are available", models == want_models, str(sorted(models)))
                 agents = {a["id"]: a for a in sb.get_data("/api/agent")}
                 check(
                     "none of the shipped custom agents exist",
