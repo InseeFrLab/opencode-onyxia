@@ -73,6 +73,34 @@ Optional — also expose the skills to **Claude Code**:
 ./install.sh --claude      # additionally copies the skills to ~/.claude/skills/
 ```
 
+#### Models only: `./install.sh --bare`
+
+If you only want the SSP Cloud LLM gateway models in your own opencode setup:
+
+```bash
+./install.sh --bare
+```
+
+It writes a single, small `~/.config/opencode/opencode.jsonc` (about 130 lines, generated from the full
+config so the two never drift) with:
+
+- the `onyxia` provider and its 3 models (context/output limits, thinking settings and the
+  `#think` / `#build` / `#plan` / `#review` / `#vision` sampling variants),
+- the default model (`onyxia/qwen3-8-27b`) and the small model used for session titles.
+
+It installs **no** agents, permissions, policies, MCP servers, skills, commands, prompts or `AGENTS.md`, and
+`--claude` cannot be combined with it. Things to know:
+
+- **opencode then runs on its own defaults: every tool is allowed without a prompt** (shell included) and any
+  provider can be used. The permission model and the "only the self-hosted provider" policy of the full install
+  are not part of it.
+- An existing `opencode.jsonc` / `opencode.json` is **backed up and replaced** (`backup-<timestamp>/`): re-add your
+  own settings afterwards. Files from a previous full install (`AGENTS.md`, `skills/`, `prompts/`, `commands/`)
+  are left in place and stay active; the script says so.
+- Re-run `./install.sh --bare` after a `git pull` to pick up model changes. You still need `OPENAI_BASE_URL` and
+  `OPENAI_API_KEY` (step 3 above).
+- `python3 -I scripts/check_install.py` tests what the full and the bare install write.
+
 ### Method B — manual
 
 ```bash

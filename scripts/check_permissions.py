@@ -380,8 +380,20 @@ def free_port() -> int:
 class Sandbox:
     """A throw-away HOME + project + private opencode service."""
 
-    def __init__(self, ref: str | None, verbose: bool):
+    def __init__(
+        self,
+        ref: str | None,
+        verbose: bool,
+        install_args: tuple[str, ...] = (),
+        project_config: dict | None = PROJECT_CONFIG,
+        ready_marker: str = "reviewer",
+    ):
+        """install_args: extra `install.sh` flags (e.g. `--bare`); project_config=None writes no project config;
+        ready_marker: an agent id whose appearance in `/api/agent` means the config is loaded."""
         self.verbose = verbose
+        self.install_args = install_args
+        self.project_config = project_config
+        self.ready_marker = ready_marker
         self.root = Path(tempfile.mkdtemp(prefix="opencode-perm-"))
         self.home = self.root / "home"
         self.proj = self.root / "proj"
@@ -417,10 +429,11 @@ class Sandbox:
         (self.home / ".config").mkdir(parents=True)
         self.proj.mkdir()
         subprocess.run(["git", "init", "-q", str(self.proj)], check=True)
-        (self.proj / "opencode.json").write_text(json.dumps(PROJECT_CONFIG))
+        if self.project_config is not None:
+            (self.proj / "opencode.json").write_text(json.dumps(self.project_config))
         cfg = self.home / ".config" / "opencode"
         install = subprocess.run(
-            ["bash", str(self.src / "install.sh")],
+            ["bash", str(self.src / "install.sh"), *self.install_args],
             env={**self.env, "OPENCODE_CONFIG_DIR": str(cfg)},
             capture_output=True,
             text=True,
@@ -434,7 +447,7 @@ class Sandbox:
             self.run("reload")
             time.sleep(1.5)
             out = self.run("api", "GET", "/api/agent")
-            if out.returncode == 0 and "reviewer" in out.stdout:
+            if out.returncode == 0 and self.ready_marker in out.stdout:
                 return
         sys.exit("private opencode service did not load the agents:\n" + out.stderr[-500:])
 
