@@ -157,96 +157,371 @@
   },
   // =========================================================================
   //  PERMISSIONS — OpenCode is NOT sandboxed: every `shell` runs on the pod.
-  //  Common data science tooling is broadly allowed; anything destructive or
-  //  outbound (network, k8s mutations, rm) asks for confirmation.
+  //  Three layers, from loosest to strictest (see README "Permissions"):
   //
-  //  ⚠ ORDER IS SEMANTIC. v2 evaluates the ordered array and the LAST matching
-  //  rule wins, so the layout must be:
-  //      1. the "*" catch-all FIRST,
-  //      2. then the broad allows,
-  //      3. then the narrow re-restrictions LAST.
-  //  Rule order across sources: lower-priority config first, then these global
-  //  rules, then each agent's own `permissions` appended LAST (so an agent's
-  //  rules override these). A shell pattern ending in "*" also matches the
-  //  bare command (`git status *` matches `git status`).
+  //   1. BASELINE  `shell * allow`: routine data science work never prompts.
+  //      (v1-style allowlists prompt on every unlisted harmless command —
+  //      tail, wc, rg, jq, mkdir, cp... — and miss option forms such as
+  //      `aws --endpoint-url ... s3 rm` or `git -C d push`.)
+  //   2. ASK       a short list of dangerous-but-legitimate actions below.
+  //   3. POLICIES  `policies` further down: catastrophic actions are blocked
+  //      without a prompt, and neither a project's own opencode.json nor an
+  //      "Allow always" can lift them (policies outrank project config).
+  //
+  //  ⚠ ORDER IS SEMANTIC. The LAST matching rule wins: the "*" rule first, then
+  //  the narrower rules after it. Rule order across sources: lower-priority
+  //  config first, then these global rules, then each agent's own `permissions`
+  //  appended LAST (an agent's rules override these), then `policies`.
+  //  A shell pattern ending in "*" also matches the bare command; `?` matches
+  //  exactly one character.
+  //
+  //  ⚠ WHAT THE SCANNER SEES (verified in a live session): pipelines, lists,
+  //  subshells, `if ...; then ...` and `$(...)` are split and each subcommand is
+  //  checked — but only its raw text. `env sudo x`, `timeout 5 sudo x`,
+  //  `nohup sudo x`, `/usr/bin/sudo x`, `xargs sudo` and `bash -c "sudo x"`
+  //  are NOT recognised by a `sudo *` pattern. Hence dangerous multi-word
+  //  phrases are SUBSTRING patterns (`*aws s3 rm*`), single words come in
+  //  boundary-safe forms (`sudo *`, `* sudo *`, `*/sudo *`, `*"sudo *`), and a shell given a
+  //  command string (`bash -c "..."`) asks so a human reads the string.
   //
   //  NOTE: "edit" is deliberately NOT granted globally; it is granted per
   //  agent (build / python-ds / r-ds / mlops below) so read-only agents stay
   //  read-only. Actions renamed in v2: bash -> shell, task -> subagent.
+  //  `opencode --auto` auto-approves every `ask` (never a `deny` or a policy):
+  //  do not use it on a config whose ask list matters (git push, S3 publishing).
   // =========================================================================
   "permissions": [
+    // ---- web: public docs are free, anything else asks ----
     { "action": "webfetch", "resource": "*", "effect": "ask" },
-    // Official MLflow docs (skill `mlflow-docs`): public pages, no data leaves.
-    { "action": "webfetch", "resource": "https://mlflow.org/docs/*", "effect": "allow" },
-    // v2 ALLOWS paths outside the project by default (v1 asked). Restore the
-    // v1 behaviour: ask before touching anything outside the project.
+    { "action": "webfetch", "resource": "https://docs.sspcloud.fr/*", "effect": "allow" },
+    { "action": "webfetch", "resource": "https://docs.onyxia.sh/*", "effect": "allow" },
+    { "action": "webfetch", "resource": "https://book.utilitr.org/*", "effect": "allow" },
+    { "action": "webfetch", "resource": "https://pythonds.linogaliana.fr/*", "effect": "allow" },
+    { "action": "webfetch", "resource": "https://inseefrlab.github.io/*", "effect": "allow" },
+    { "action": "webfetch", "resource": "https://ensae-reproductibilite.github.io/*", "effect": "allow" },
+    { "action": "webfetch", "resource": "https://duckdb.org/*", "effect": "allow" },
+    { "action": "webfetch", "resource": "https://mlflow.org/*", "effect": "allow" },
+    { "action": "webfetch", "resource": "https://pypi.org/*", "effect": "allow" },
+    { "action": "webfetch", "resource": "https://cran.r-project.org/*", "effect": "allow" },
+    { "action": "webfetch", "resource": "https://quarto.org/*", "effect": "allow" },
+    { "action": "webfetch", "resource": "https://docs.astral.sh/*", "effect": "allow" },
+    { "action": "webfetch", "resource": "https://opencode.ai/*", "effect": "allow" },
+
+    // ---- paths outside the project: ask, except a short safe set ----
+    // (v2 allows them by default; global skills' references/scripts, /tmp and caches are routine reads)
     { "action": "external_directory", "resource": "*", "effect": "ask" },
-    // Delegation: allow the purpose-built subagents, refuse the generic
-    // "general" one — it has full write permission and no Onyxia context, so
-    // it is never the right delegate here.
+    { "action": "external_directory", "resource": "~/.config/opencode/*", "effect": "allow" },
+    { "action": "external_directory", "resource": "~/.claude/skills/*", "effect": "allow" },
+    { "action": "external_directory", "resource": "~/.agents/skills/*", "effect": "allow" },
+    { "action": "external_directory", "resource": "/tmp/*", "effect": "allow" },
+    { "action": "external_directory", "resource": "~/.cache/*", "effect": "allow" },
+    { "action": "external_directory", "resource": "~/.local/share/opencode/*", "effect": "allow" },
+
+    // Delegation: allow the purpose-built subagents, refuse the generic "general" one — it has full write
+    // permission and no Onyxia context, so it is never the right delegate here.
     { "action": "subagent", "resource": "*", "effect": "allow" },
     { "action": "subagent", "resource": "general", "effect": "deny" },
-    { "action": "shell", "resource": "*", "effect": "ask" },
-    // ---- broad allows: routine, non-destructive DS tooling ----
-    { "action": "shell", "resource": "find *", "effect": "allow" },
-    { "action": "shell", "resource": "grep *", "effect": "allow" },
-    { "action": "shell", "resource": "head *", "effect": "allow" },
-    { "action": "shell", "resource": "echo *", "effect": "allow" },
-    { "action": "shell", "resource": "ls *", "effect": "allow" },
-    { "action": "shell", "resource": "sort *", "effect": "allow" },
-    { "action": "shell", "resource": "cat *", "effect": "allow" },
-    { "action": "shell", "resource": "git *", "effect": "allow" },
-    { "action": "shell", "resource": "uv *", "effect": "allow" },
-    { "action": "shell", "resource": "pip *", "effect": "allow" },
-    { "action": "shell", "resource": "pixi *", "effect": "allow" },
-    { "action": "shell", "resource": "python *", "effect": "allow" },
-    { "action": "shell", "resource": "python3 *", "effect": "allow" },
-    { "action": "shell", "resource": "pytest*", "effect": "allow" },
-    { "action": "shell", "resource": "ruff *", "effect": "allow" },
-    { "action": "shell", "resource": "mypy *", "effect": "allow" },
-    { "action": "shell", "resource": "Rscript *", "effect": "allow" },
-    { "action": "shell", "resource": "R -e *", "effect": "allow" },
-    { "action": "shell", "resource": "quarto *", "effect": "allow" },
-    { "action": "shell", "resource": "make *", "effect": "allow" },
-    { "action": "shell", "resource": "just *", "effect": "allow" },
-    { "action": "shell", "resource": "mc *", "effect": "allow" },
-    { "action": "shell", "resource": "aws s3*", "effect": "allow" },
-    { "action": "shell", "resource": "mlflow *", "effect": "allow" },
-    { "action": "shell", "resource": "duckdb *", "effect": "allow" },
-    // Vault: read-only only; put/delete fall back to the "*" catch-all.
-    { "action": "shell", "resource": "vault kv get*", "effect": "allow" },
-    { "action": "shell", "resource": "vault kv list*", "effect": "allow" },
-    // Argo / kubectl: browsing is free; mutations are re-restricted below.
-    { "action": "shell", "resource": "argo list*", "effect": "allow" },
-    { "action": "shell", "resource": "argo get*", "effect": "allow" },
-    { "action": "shell", "resource": "argo logs*", "effect": "allow" },
-    { "action": "shell", "resource": "argo watch*", "effect": "allow" },
-    { "action": "shell", "resource": "kubectl get*", "effect": "allow" },
-    { "action": "shell", "resource": "kubectl describe*", "effect": "allow" },
-    { "action": "shell", "resource": "kubectl logs*", "effect": "allow" },
-    { "action": "shell", "resource": "kubectl top*", "effect": "allow" },
-    // ---- narrow re-restrictions: MUST stay after the allows ----
-    // Outbound or irreversible: leaving the pod, or destroying local state.
-    { "action": "shell", "resource": "git push*", "effect": "ask" },
-    { "action": "shell", "resource": "git reset --hard*", "effect": "ask" },
-    { "action": "shell", "resource": "git clean*", "effect": "ask" },
-    // Submitting a workflow launches containers on the cluster.
-    { "action": "shell", "resource": "argo submit*", "effect": "ask" },
-    { "action": "shell", "resource": "argo delete*", "effect": "ask" },
-    { "action": "shell", "resource": "kubectl apply*", "effect": "ask" },
-    { "action": "shell", "resource": "kubectl create*", "effect": "ask" },
-    { "action": "shell", "resource": "kubectl delete*", "effect": "ask" },
-    { "action": "shell", "resource": "docker *", "effect": "ask" },
-    // S3 writes/deletes: `ls`/`cp` inward stay free via "aws s3*" above.
-    { "action": "shell", "resource": "aws s3 rm*", "effect": "ask" },
-    { "action": "shell", "resource": "aws s3 sync*", "effect": "ask" },
-    { "action": "shell", "resource": "mc rm*", "effect": "ask" },
-    // Deletions always confirm (covers `rm -rf <glob>` too). Regenerate
-    // outputs via the pipeline rather than deleting data/artifacts.
+
+    // ---- shell: routine work is silent, a SHORT list of dangerous-but-legitimate actions asks ----
+    { "action": "shell", "resource": "*", "effect": "allow" },
+
+    // Wrappers hide the real command from first-word matching (`env`, `timeout`, `nohup`, `bash -c "..."`):
+    // the patterns below are substring/boundary patterns, and a shell given a command STRING asks, so a human sees it.
+    { "action": "shell", "resource": "bash -*c *", "effect": "ask" },
+    { "action": "shell", "resource": "* bash -*c *", "effect": "ask" },
+    { "action": "shell", "resource": "*/bash -*c *", "effect": "ask" },
+    { "action": "shell", "resource": "sh -*c *", "effect": "ask" },
+    { "action": "shell", "resource": "* sh -*c *", "effect": "ask" },
+    { "action": "shell", "resource": "*/sh -*c *", "effect": "ask" },
+    { "action": "shell", "resource": "zsh -*c *", "effect": "ask" },
+    { "action": "shell", "resource": "* zsh -*c *", "effect": "ask" },
+    { "action": "shell", "resource": "*/zsh -*c *", "effect": "ask" },
+    { "action": "shell", "resource": "dash -*c *", "effect": "ask" },
+    { "action": "shell", "resource": "* dash -*c *", "effect": "ask" },
+    { "action": "shell", "resource": "*/dash -*c *", "effect": "ask" },
+    { "action": "shell", "resource": "ksh -*c *", "effect": "ask" },
+    { "action": "shell", "resource": "* ksh -*c *", "effect": "ask" },
+    { "action": "shell", "resource": "*/ksh -*c *", "effect": "ask" },
+
+    // git: leaving the pod, or destroying local history/state
+    { "action": "shell", "resource": "*git push*", "effect": "ask" },
+    { "action": "shell", "resource": "*git -* push*", "effect": "ask" },
+    { "action": "shell", "resource": "*git reset --hard*", "effect": "ask" },
+    { "action": "shell", "resource": "*git -* reset --hard*", "effect": "ask" },
+    { "action": "shell", "resource": "*git clean*", "effect": "ask" },
+    { "action": "shell", "resource": "*git -* clean*", "effect": "ask" },
+    { "action": "shell", "resource": "*git branch -D*", "effect": "ask" },
+    { "action": "shell", "resource": "*git -* branch -D*", "effect": "ask" },
+
+    // local deletion always confirms (regenerate outputs via the pipeline instead of deleting data)
     { "action": "shell", "resource": "rm *", "effect": "ask" },
-    { "action": "shell", "resource": "curl *", "effect": "ask" },
-    { "action": "shell", "resource": "wget *", "effect": "ask" },
+    { "action": "shell", "resource": "* rm *", "effect": "ask" },
+    { "action": "shell", "resource": "*/rm *", "effect": "ask" },
+    { "action": "shell", "resource": "shred *", "effect": "ask" },
+    { "action": "shell", "resource": "* shred *", "effect": "ask" },
+    { "action": "shell", "resource": "*/shred *", "effect": "ask" },
+    { "action": "shell", "resource": "*find * -delete*", "effect": "ask" },
+    { "action": "shell", "resource": "*find * -exec rm*", "effect": "ask" },
+
+    // S3/MinIO: publishing (diffusion/ is readable by EVERY Onyxia user) and bulk overwrite
+    { "action": "shell", "resource": "*aws s3 cp * s3://*/diffusion/*", "effect": "ask" },
+    { "action": "shell", "resource": "*aws -* s3 cp * s3://*/diffusion/*", "effect": "ask" },
+    { "action": "shell", "resource": "*aws s3 mv*", "effect": "ask" },
+    { "action": "shell", "resource": "*aws -* s3 mv*", "effect": "ask" },
+    { "action": "shell", "resource": "*aws s3 sync*", "effect": "ask" },
+    { "action": "shell", "resource": "*aws -* s3 sync*", "effect": "ask" },
+    { "action": "shell", "resource": "*aws s3 presign*", "effect": "ask" },
+    { "action": "shell", "resource": "*aws -* s3 presign*", "effect": "ask" },
+    { "action": "shell", "resource": "*aws s3api put-*", "effect": "ask" },
+    { "action": "shell", "resource": "*aws -* s3api put-*", "effect": "ask" },
+    { "action": "shell", "resource": "*mc cp *diffusion*", "effect": "ask" },
+    { "action": "shell", "resource": "*mc mv*", "effect": "ask" },
+    { "action": "shell", "resource": "*mc mirror*", "effect": "ask" },
+    { "action": "shell", "resource": "*mc share*", "effect": "ask" },
+    { "action": "shell", "resource": "*mc anonymous*", "effect": "ask" },
+    { "action": "shell", "resource": "*mc policy*", "effect": "ask" },
+
+    // cluster / GitOps / vault CLIs: anything unknown asks, read-only verbs are free (deletes: see `policies`)
+    { "action": "shell", "resource": "kubectl *", "effect": "ask" },
+    { "action": "shell", "resource": "* kubectl *", "effect": "ask" },
+    { "action": "shell", "resource": "*/kubectl *", "effect": "ask" },
+    { "action": "shell", "resource": "kubectl get*", "effect": "allow" },
+    { "action": "shell", "resource": "kubectl -* get*", "effect": "allow" },
+    { "action": "shell", "resource": "kubectl describe*", "effect": "allow" },
+    { "action": "shell", "resource": "kubectl -* describe*", "effect": "allow" },
+    { "action": "shell", "resource": "kubectl logs*", "effect": "allow" },
+    { "action": "shell", "resource": "kubectl -* logs*", "effect": "allow" },
+    { "action": "shell", "resource": "kubectl top*", "effect": "allow" },
+    { "action": "shell", "resource": "kubectl -* top*", "effect": "allow" },
+    { "action": "shell", "resource": "helm *", "effect": "ask" },
+    { "action": "shell", "resource": "* helm *", "effect": "ask" },
+    { "action": "shell", "resource": "*/helm *", "effect": "ask" },
+    { "action": "shell", "resource": "helm list*", "effect": "allow" },
+    { "action": "shell", "resource": "helm -* list*", "effect": "allow" },
+    { "action": "shell", "resource": "helm status*", "effect": "allow" },
+    { "action": "shell", "resource": "helm -* status*", "effect": "allow" },
+    { "action": "shell", "resource": "helm show*", "effect": "allow" },
+    { "action": "shell", "resource": "helm -* show*", "effect": "allow" },
+    { "action": "shell", "resource": "argo *", "effect": "ask" },
+    { "action": "shell", "resource": "* argo *", "effect": "ask" },
+    { "action": "shell", "resource": "*/argo *", "effect": "ask" },
+    { "action": "shell", "resource": "argo list*", "effect": "allow" },
+    { "action": "shell", "resource": "argo -* list*", "effect": "allow" },
+    { "action": "shell", "resource": "argo get*", "effect": "allow" },
+    { "action": "shell", "resource": "argo -* get*", "effect": "allow" },
+    { "action": "shell", "resource": "argo logs*", "effect": "allow" },
+    { "action": "shell", "resource": "argo -* logs*", "effect": "allow" },
+    { "action": "shell", "resource": "argo watch*", "effect": "allow" },
+    { "action": "shell", "resource": "argo -* watch*", "effect": "allow" },
+    { "action": "shell", "resource": "argocd *", "effect": "ask" },
+    { "action": "shell", "resource": "* argocd *", "effect": "ask" },
+    { "action": "shell", "resource": "*/argocd *", "effect": "ask" },
+    { "action": "shell", "resource": "argocd app list*", "effect": "allow" },
+    { "action": "shell", "resource": "argocd -* app list*", "effect": "allow" },
+    { "action": "shell", "resource": "argocd app get*", "effect": "allow" },
+    { "action": "shell", "resource": "argocd -* app get*", "effect": "allow" },
+    { "action": "shell", "resource": "vault *", "effect": "ask" },
+    { "action": "shell", "resource": "* vault *", "effect": "ask" },
+    { "action": "shell", "resource": "*/vault *", "effect": "ask" },
+    { "action": "shell", "resource": "vault kv get*", "effect": "allow" },
+    { "action": "shell", "resource": "vault -* kv get*", "effect": "allow" },
+    { "action": "shell", "resource": "vault kv list*", "effect": "allow" },
+    { "action": "shell", "resource": "vault -* kv list*", "effect": "allow" },
+    { "action": "shell", "resource": "docker *", "effect": "ask" },
+    { "action": "shell", "resource": "* docker *", "effect": "ask" },
+    { "action": "shell", "resource": "*/docker *", "effect": "ask" },
+
+    // outbound payloads: plain downloads are free; uploads / POST / remote shells ask
+    { "action": "shell", "resource": "*curl *-d *", "effect": "ask" },
+    { "action": "shell", "resource": "*curl *--data*", "effect": "ask" },
+    { "action": "shell", "resource": "*curl *-F *", "effect": "ask" },
+    { "action": "shell", "resource": "*curl *--form*", "effect": "ask" },
+    { "action": "shell", "resource": "*curl *-T *", "effect": "ask" },
+    { "action": "shell", "resource": "*curl *--upload-file*", "effect": "ask" },
+    { "action": "shell", "resource": "*curl *-X POST*", "effect": "ask" },
+    { "action": "shell", "resource": "*curl *-X PUT*", "effect": "ask" },
+    { "action": "shell", "resource": "*curl *-X PATCH*", "effect": "ask" },
+    { "action": "shell", "resource": "*curl *-X DELETE*", "effect": "ask" },
+    { "action": "shell", "resource": "*curl *--request*", "effect": "ask" },
+    { "action": "shell", "resource": "*wget *--post-*", "effect": "ask" },
+    { "action": "shell", "resource": "*wget *--method*", "effect": "ask" },
+    { "action": "shell", "resource": "*wget *--body-*", "effect": "ask" },
+    { "action": "shell", "resource": "ssh *", "effect": "ask" },
+    { "action": "shell", "resource": "* ssh *", "effect": "ask" },
+    { "action": "shell", "resource": "*/ssh *", "effect": "ask" },
+    { "action": "shell", "resource": "scp *", "effect": "ask" },
+    { "action": "shell", "resource": "* scp *", "effect": "ask" },
+    { "action": "shell", "resource": "*/scp *", "effect": "ask" },
+    { "action": "shell", "resource": "sftp *", "effect": "ask" },
+    { "action": "shell", "resource": "* sftp *", "effect": "ask" },
+    { "action": "shell", "resource": "*/sftp *", "effect": "ask" },
+    { "action": "shell", "resource": "*rsync * *:*", "effect": "ask" },
+
+    // secrets exposure: dumping the whole environment, or reading dotenv files through the shell
+    // (mirrors the base `read` policy for *.env; the order matters: example files last)
+    { "action": "shell", "resource": "env", "effect": "ask" },
+    { "action": "shell", "resource": "printenv", "effect": "ask" },
+    { "action": "shell", "resource": "* *.env", "effect": "ask" },
+    { "action": "shell", "resource": "* *.env.*", "effect": "ask" },
+    { "action": "shell", "resource": "* *.env.example", "effect": "allow" },
+
+    // processes, ownership, and the agent's own config (so it cannot quietly rewrite its rules)
+    { "action": "shell", "resource": "kill *", "effect": "ask" },
+    { "action": "shell", "resource": "* kill *", "effect": "ask" },
+    { "action": "shell", "resource": "*/kill *", "effect": "ask" },
+    { "action": "shell", "resource": "pkill *", "effect": "ask" },
+    { "action": "shell", "resource": "* pkill *", "effect": "ask" },
+    { "action": "shell", "resource": "*/pkill *", "effect": "ask" },
+    { "action": "shell", "resource": "killall *", "effect": "ask" },
+    { "action": "shell", "resource": "* killall *", "effect": "ask" },
+    { "action": "shell", "resource": "*/killall *", "effect": "ask" },
+    { "action": "shell", "resource": "chown *", "effect": "ask" },
+    { "action": "shell", "resource": "* chown *", "effect": "ask" },
+    { "action": "shell", "resource": "*/chown *", "effect": "ask" },
+    { "action": "shell", "resource": "*chmod -R*", "effect": "ask" },
+    { "action": "shell", "resource": "* */.config/opencode/*", "effect": "ask" },
+
     { "action": "skill", "resource": "*", "effect": "allow" }
+  ],
+  // =========================================================================
+  //  POLICIES — hard denies (`tool.use`, resource `<action>:<value>`). They never
+  //  prompt, apply after agent rules and saved approvals, and only ever tighten.
+  //  This file is the GLOBAL config: it outranks a repository's opencode.json.
+  //  Platform admins can ship the same list in /etc/opencode/opencode.json (the
+  //  highest-authority file) so users cannot edit it either.
+  //  Matching is on the raw command text (no regex, no path normalisation):
+  //  this reduces risk, it is NOT a sandbox (`python -c`, scripts, aliases and
+  //  obfuscation such as `r''m` still get through).
+  // =========================================================================
+  "policies": [
+    // privilege escalation (also behind wrappers: env/timeout/nohup/xargs/absolute path/bash -c — verified live)
+    { "action": "tool.use", "resource": "shell:sudo *", "effect": "deny" },
+    { "action": "tool.use", "resource": "shell:* sudo *", "effect": "deny" },
+    { "action": "tool.use", "resource": "shell:*/sudo *", "effect": "deny" },
+    { "action": "tool.use", "resource": "shell:*\"sudo *", "effect": "deny" },
+    { "action": "tool.use", "resource": "shell:*'sudo *", "effect": "deny" },
+    { "action": "tool.use", "resource": "shell:su *", "effect": "deny" },
+    { "action": "tool.use", "resource": "shell:* su *", "effect": "deny" },
+    { "action": "tool.use", "resource": "shell:*/su *", "effect": "deny" },
+    { "action": "tool.use", "resource": "shell:*\"su *", "effect": "deny" },
+    { "action": "tool.use", "resource": "shell:*'su *", "effect": "deny" },
+    { "action": "tool.use", "resource": "shell:doas *", "effect": "deny" },
+    { "action": "tool.use", "resource": "shell:* doas *", "effect": "deny" },
+    { "action": "tool.use", "resource": "shell:*/doas *", "effect": "deny" },
+    { "action": "tool.use", "resource": "shell:*\"doas *", "effect": "deny" },
+    { "action": "tool.use", "resource": "shell:*'doas *", "effect": "deny" },
+    { "action": "tool.use", "resource": "shell:pkexec *", "effect": "deny" },
+    { "action": "tool.use", "resource": "shell:* pkexec *", "effect": "deny" },
+    { "action": "tool.use", "resource": "shell:*/pkexec *", "effect": "deny" },
+    { "action": "tool.use", "resource": "shell:*\"pkexec *", "effect": "deny" },
+    { "action": "tool.use", "resource": "shell:*'pkexec *", "effect": "deny" },
+    // system damage
+    { "action": "tool.use", "resource": "shell:mkfs*", "effect": "deny" },
+    { "action": "tool.use", "resource": "shell:*/mkfs*", "effect": "deny" },
+    { "action": "tool.use", "resource": "shell:dd * of=/dev/*", "effect": "deny" },
+    { "action": "tool.use", "resource": "shell:*/dd * of=/dev/*", "effect": "deny" },
+    { "action": "tool.use", "resource": "shell:shutdown*", "effect": "deny" },
+    { "action": "tool.use", "resource": "shell:*/shutdown*", "effect": "deny" },
+    { "action": "tool.use", "resource": "shell:reboot*", "effect": "deny" },
+    { "action": "tool.use", "resource": "shell:*/reboot*", "effect": "deny" },
+    { "action": "tool.use", "resource": "shell:poweroff*", "effect": "deny" },
+    { "action": "tool.use", "resource": "shell:*/poweroff*", "effect": "deny" },
+    { "action": "tool.use", "resource": "shell:halt*", "effect": "deny" },
+    { "action": "tool.use", "resource": "shell:*/halt*", "effect": "deny" },
+
+    // catastrophic local deletion (`?` = exactly one char: `/?` is the literal `/*`; a plain `/*` would also block /tmp/x)
+    { "action": "tool.use", "resource": "shell:*rm -*r* /", "effect": "deny" },
+    { "action": "tool.use", "resource": "shell:*rm -*r* /?", "effect": "deny" },
+    { "action": "tool.use", "resource": "shell:*rm -*r* / *", "effect": "deny" },
+    { "action": "tool.use", "resource": "shell:*rm -*r* ~", "effect": "deny" },
+    { "action": "tool.use", "resource": "shell:*rm -*r* ~/?", "effect": "deny" },
+    { "action": "tool.use", "resource": "shell:*rm -*r* $HOME", "effect": "deny" },
+    { "action": "tool.use", "resource": "shell:*rm -*r* $HOME/?", "effect": "deny" },
+    { "action": "tool.use", "resource": "shell:*rm *--no-preserve-root*", "effect": "deny" },
+    { "action": "tool.use", "resource": "shell:*chmod -R * /", "effect": "deny" },
+    { "action": "tool.use", "resource": "shell:*chown -R * /", "effect": "deny" },
+
+    // remote code from a pipe, and dynamic evaluation (bare interpreters are only ever a pipe target)
+    { "action": "tool.use", "resource": "shell:sh", "effect": "deny" },
+    { "action": "tool.use", "resource": "shell:bash", "effect": "deny" },
+    { "action": "tool.use", "resource": "shell:zsh", "effect": "deny" },
+    { "action": "tool.use", "resource": "shell:dash", "effect": "deny" },
+    { "action": "tool.use", "resource": "shell:python", "effect": "deny" },
+    { "action": "tool.use", "resource": "shell:python3", "effect": "deny" },
+    { "action": "tool.use", "resource": "shell:perl", "effect": "deny" },
+    { "action": "tool.use", "resource": "shell:sh -s*", "effect": "deny" },
+    { "action": "tool.use", "resource": "shell:bash -s*", "effect": "deny" },
+    { "action": "tool.use", "resource": "shell:python -", "effect": "deny" },
+    { "action": "tool.use", "resource": "shell:python3 -", "effect": "deny" },
+    { "action": "tool.use", "resource": "shell:eval *", "effect": "deny" },
+
+    // remote deletion: the agent never deletes S3 objects, buckets, cluster resources or secrets (do it yourself)
+    { "action": "tool.use", "resource": "shell:*aws s3 rm*", "effect": "deny" },
+    { "action": "tool.use", "resource": "shell:*aws -* s3 rm*", "effect": "deny" },
+    { "action": "tool.use", "resource": "shell:*aws s3 rb*", "effect": "deny" },
+    { "action": "tool.use", "resource": "shell:*aws -* s3 rb*", "effect": "deny" },
+    { "action": "tool.use", "resource": "shell:*aws s3api delete-*", "effect": "deny" },
+    { "action": "tool.use", "resource": "shell:*aws -* s3api delete-*", "effect": "deny" },
+    { "action": "tool.use", "resource": "shell:*aws s3 sync *--delete*", "effect": "deny" },
+    { "action": "tool.use", "resource": "shell:*aws -* s3 sync *--delete*", "effect": "deny" },
+    { "action": "tool.use", "resource": "shell:*kubectl delete*", "effect": "deny" },
+    { "action": "tool.use", "resource": "shell:*kubectl -* delete*", "effect": "deny" },
+    { "action": "tool.use", "resource": "shell:*helm uninstall*", "effect": "deny" },
+    { "action": "tool.use", "resource": "shell:*helm -* uninstall*", "effect": "deny" },
+    { "action": "tool.use", "resource": "shell:*mc rm*", "effect": "deny" },
+    { "action": "tool.use", "resource": "shell:*mc rb*", "effect": "deny" },
+    { "action": "tool.use", "resource": "shell:*mc admin*", "effect": "deny" },
+    { "action": "tool.use", "resource": "shell:*argo delete*", "effect": "deny" },
+    { "action": "tool.use", "resource": "shell:*argocd app delete*", "effect": "deny" },
+    { "action": "tool.use", "resource": "shell:*vault kv delete*", "effect": "deny" },
+    { "action": "tool.use", "resource": "shell:*vault kv destroy*", "effect": "deny" },
+    { "action": "tool.use", "resource": "shell:*vault kv metadata delete*", "effect": "deny" },
+    { "action": "tool.use", "resource": "shell:*vault delete*", "effect": "deny" },
+    { "action": "tool.use", "resource": "shell:*vault secrets disable*", "effect": "deny" },
+    { "action": "tool.use", "resource": "shell:*vault auth disable*", "effect": "deny" },
+
+    // network backdoors
+    { "action": "tool.use", "resource": "shell:nc *", "effect": "deny" },
+    { "action": "tool.use", "resource": "shell:* nc *", "effect": "deny" },
+    { "action": "tool.use", "resource": "shell:*/nc *", "effect": "deny" },
+    { "action": "tool.use", "resource": "shell:*\"nc *", "effect": "deny" },
+    { "action": "tool.use", "resource": "shell:*'nc *", "effect": "deny" },
+    { "action": "tool.use", "resource": "shell:ncat *", "effect": "deny" },
+    { "action": "tool.use", "resource": "shell:* ncat *", "effect": "deny" },
+    { "action": "tool.use", "resource": "shell:*/ncat *", "effect": "deny" },
+    { "action": "tool.use", "resource": "shell:*\"ncat *", "effect": "deny" },
+    { "action": "tool.use", "resource": "shell:*'ncat *", "effect": "deny" },
+    { "action": "tool.use", "resource": "shell:socat *", "effect": "deny" },
+    { "action": "tool.use", "resource": "shell:* socat *", "effect": "deny" },
+    { "action": "tool.use", "resource": "shell:*/socat *", "effect": "deny" },
+    { "action": "tool.use", "resource": "shell:*\"socat *", "effect": "deny" },
+    { "action": "tool.use", "resource": "shell:*'socat *", "effect": "deny" },
+    { "action": "tool.use", "resource": "shell:telnet *", "effect": "deny" },
+    { "action": "tool.use", "resource": "shell:* telnet *", "effect": "deny" },
+    { "action": "tool.use", "resource": "shell:*/telnet *", "effect": "deny" },
+    { "action": "tool.use", "resource": "shell:*\"telnet *", "effect": "deny" },
+    { "action": "tool.use", "resource": "shell:*'telnet *", "effect": "deny" },
+
+    // credential files: the read/edit tools and the shell
+    { "action": "tool.use", "resource": "read:*/.ssh/*", "effect": "deny" },
+    { "action": "tool.use", "resource": "edit:*/.ssh/*", "effect": "deny" },
+    { "action": "tool.use", "resource": "shell:* */.ssh/*", "effect": "deny" },
+    { "action": "tool.use", "resource": "read:*/.gnupg/*", "effect": "deny" },
+    { "action": "tool.use", "resource": "edit:*/.gnupg/*", "effect": "deny" },
+    { "action": "tool.use", "resource": "shell:* */.gnupg/*", "effect": "deny" },
+    { "action": "tool.use", "resource": "read:*/.config/gh/*", "effect": "deny" },
+    { "action": "tool.use", "resource": "edit:*/.config/gh/*", "effect": "deny" },
+    { "action": "tool.use", "resource": "shell:* */.config/gh/*", "effect": "deny" },
+    { "action": "tool.use", "resource": "read:*/.netrc", "effect": "deny" },
+    { "action": "tool.use", "resource": "edit:*/.netrc", "effect": "deny" },
+    { "action": "tool.use", "resource": "shell:* */.netrc*", "effect": "deny" },
+    { "action": "tool.use", "resource": "read:*/.git-credentials", "effect": "deny" },
+    { "action": "tool.use", "resource": "edit:*/.git-credentials", "effect": "deny" },
+    { "action": "tool.use", "resource": "shell:* */.git-credentials*", "effect": "deny" },
+    { "action": "tool.use", "resource": "read:*/.local/share/opencode/auth*", "effect": "deny" },
+
+    // self-protection: this file holds these policies (the global config outranks any project config)
+    { "action": "tool.use", "resource": "edit:*/.config/opencode/*", "effect": "deny" }
   ],
   // =========================================================================
   //  AGENTS — 2 primary agents (Tab to switch) + 5 subagents, delegated
@@ -270,8 +545,9 @@
   //  told when it may declare itself done.
   //
   //  python-ds / r-ds / mlops deliberately have NO tool restriction:
-  //  they must execute and verify code; the global shell allowlist above
-  //  (rm/curl/kubectl apply/docker/argo submit on "ask") keeps them in check.
+  //  they must execute and verify code; the global ask list and `policies`
+  //  above (rm, git push, S3 publishing, cluster mutations, uploads on "ask";
+  //  remote deletes and sudo denied) keep them in check.
   //
   //  Agent `permissions` are appended AFTER the global ones (last match wins).
   // =========================================================================
@@ -298,14 +574,47 @@
         // Order matters: deny-all first, then the narrow allow.
         { "action": "edit", "resource": "*", "effect": "deny" },
         { "action": "edit", "resource": ".opencode/plans/*.md", "effect": "allow" },
+        // Planning is read-only: inspection commands are free, anything else asks.
+        // (Agent rules are appended after the global ones, so the dotenv/config
+        // guards of the global block are repeated at the end.)
         { "action": "shell", "resource": "*", "effect": "ask" },
-        { "action": "shell", "resource": "git status", "effect": "allow" },
+        { "action": "shell", "resource": "ls *", "effect": "allow" },
+        { "action": "shell", "resource": "cat *", "effect": "allow" },
+        { "action": "shell", "resource": "head *", "effect": "allow" },
+        { "action": "shell", "resource": "tail *", "effect": "allow" },
+        { "action": "shell", "resource": "wc *", "effect": "allow" },
+        { "action": "shell", "resource": "grep *", "effect": "allow" },
+        { "action": "shell", "resource": "rg *", "effect": "allow" },
+        { "action": "shell", "resource": "find *", "effect": "allow" },
+        { "action": "shell", "resource": "tree*", "effect": "allow" },
+        { "action": "shell", "resource": "pwd", "effect": "allow" },
+        { "action": "shell", "resource": "which *", "effect": "allow" },
+        { "action": "shell", "resource": "jq *", "effect": "allow" },
+        { "action": "shell", "resource": "sort *", "effect": "allow" },
+        { "action": "shell", "resource": "uniq*", "effect": "allow" },
+        { "action": "shell", "resource": "cut *", "effect": "allow" },
+        { "action": "shell", "resource": "diff *", "effect": "allow" },
+        { "action": "shell", "resource": "date", "effect": "allow" },
+        { "action": "shell", "resource": "git status*", "effect": "allow" },
         { "action": "shell", "resource": "git log*", "effect": "allow" },
         { "action": "shell", "resource": "git diff*", "effect": "allow" },
-        { "action": "shell", "resource": "ls *", "effect": "allow" },
+        { "action": "shell", "resource": "git show*", "effect": "allow" },
+        { "action": "shell", "resource": "git branch", "effect": "allow" },
+        { "action": "shell", "resource": "git branch --list*", "effect": "allow" },
+        { "action": "shell", "resource": "git -* status*", "effect": "allow" },
+        { "action": "shell", "resource": "git -* log*", "effect": "allow" },
+        { "action": "shell", "resource": "git -* diff*", "effect": "allow" },
+        { "action": "shell", "resource": "git -* show*", "effect": "allow" },
+        { "action": "shell", "resource": "duckdb *", "effect": "allow" },
         { "action": "shell", "resource": "aws s3 ls*", "effect": "allow" },
+        { "action": "shell", "resource": "aws -* s3 ls*", "effect": "allow" },
         { "action": "shell", "resource": "mc ls*", "effect": "allow" },
-        { "action": "shell", "resource": "duckdb *", "effect": "allow" }
+        { "action": "shell", "resource": "find * -delete*", "effect": "ask" },
+        { "action": "shell", "resource": "find * -exec*", "effect": "ask" },
+        { "action": "shell", "resource": "* *.env", "effect": "ask" },
+        { "action": "shell", "resource": "* *.env.*", "effect": "ask" },
+        { "action": "shell", "resource": "* *.env.example", "effect": "allow" },
+        { "action": "shell", "resource": "* */.config/opencode/*", "effect": "ask" }
       ]
     },
     "python-ds": {
@@ -365,6 +674,15 @@
         { "action": "shell", "resource": "grep *", "effect": "allow" },
         { "action": "shell", "resource": "rg *", "effect": "allow" },
         { "action": "shell", "resource": "find *", "effect": "allow" },
+        { "action": "shell", "resource": "jq *", "effect": "allow" },
+        { "action": "shell", "resource": "tree*", "effect": "allow" },
+        { "action": "shell", "resource": "diff *", "effect": "allow" },
+        { "action": "shell", "resource": "sort *", "effect": "allow" },
+        { "action": "shell", "resource": "uniq*", "effect": "allow" },
+        { "action": "shell", "resource": "cut *", "effect": "allow" },
+        { "action": "shell", "resource": "pwd", "effect": "allow" },
+        { "action": "shell", "resource": "which *", "effect": "allow" },
+        { "action": "shell", "resource": "date", "effect": "allow" },
         { "action": "shell", "resource": "git status", "effect": "allow" },
         { "action": "shell", "resource": "git status*", "effect": "allow" },
         { "action": "shell", "resource": "git diff*", "effect": "allow" },
@@ -411,7 +729,13 @@
         { "action": "shell", "resource": "kubectl delete*", "effect": "deny" },
         { "action": "shell", "resource": "docker *", "effect": "deny" },
         { "action": "shell", "resource": "pip install*", "effect": "deny" },
-        { "action": "shell", "resource": "uv add*", "effect": "deny" }
+        { "action": "shell", "resource": "uv add*", "effect": "deny" },
+        { "action": "shell", "resource": "find * -delete*", "effect": "deny" },
+        { "action": "shell", "resource": "find * -exec*", "effect": "deny" },
+        // dotenv files hold tokens: the reviewer cannot ask, so it simply never reads them
+        { "action": "shell", "resource": "* *.env", "effect": "deny" },
+        { "action": "shell", "resource": "* *.env.*", "effect": "deny" },
+        { "action": "shell", "resource": "* *.env.example", "effect": "allow" }
       ]
     },
     "dataviz-vision": {
