@@ -11,12 +11,16 @@ opencode-onyxia/
 ├── opencode.jsonc                 # main config (native opencode v2): providers, models/variants, agents, permissions, MCP
 ├── AGENTS.md                      # Onyxia context shared by ALL agents (loaded automatically)
 ├── install.sh                     # GLOBAL install into ~/.config/opencode (all projects)
+├── onyxia-init.sh                 # Onyxia personal init script: installs opencode + a released config at service start
+├── MANIFEST                       # runtime files shipped in the release tarball
 ├── INSTALL.md                     # detailed install guide
+├── .github/workflows/release.yml  # checks on PRs; on a v* tag builds and publishes the release tarball
 ├── THIRD_PARTY.md  UPSTREAM.lock  # skills adapted from duckdb/duckdb-skills (MIT) and mlflow/skills (Apache-2.0)
 ├── licenses/                      # upstream licenses
 ├── scripts/vendor_mlflow_skills.py# re-creates the vendored mlflow-* skills from the pinned upstream revision
 ├── scripts/check_permissions.py   # model-free test of the permission rules (allow/ask/deny table)
-├── scripts/check_install.py       # tests what `install.sh` and `install.sh --bare` write
+├── scripts/check_install.py       # tests install.sh (full/--bare), the release tarball and onyxia-init.sh
+├── scripts/build_dist.sh          # builds dist/opencode-onyxia.tar.gz (+ .sha256) from MANIFEST
 ├── prompts/                       # one system prompt per agent
 │   ├── build.md  plan.md  python-ds.md  r-ds.md  mlops.md  reviewer.md  dataviz-vision.md
 └── .opencode/
@@ -42,6 +46,20 @@ opencode-onyxia/
 ```
 
 ## Installation (summary — detailed guide in `INSTALL.md`)
+
+**On SSP Cloud, the shortest route is the init script.** Under Onyxia → *My account* → *Services*, set the
+initialization script and (optionally) its arguments:
+```
+URL   https://raw.githubusercontent.com/inseefrlab/opencode-onyxia/main/onyxia-init.sh
+args  --version v1.0.0          # pin a release (default: latest); add --bare for the models only
+```
+Every new service then installs opencode v2 (if missing) and the released config, checksum-verified. The script
+never makes the service fail: errors go to `~/.cache/opencode-onyxia-init.log`. The platform already injects
+`OPENAI_BASE_URL` / `OPENAI_API_KEY`. If you already use another init script, add one line to it instead:
+`curl -fsSL https://raw.githubusercontent.com/inseefrlab/opencode-onyxia/main/onyxia-init.sh | bash -s -- --version v1.0.0`.
+
+Manual install from a clone:
+
 1. **Install OpenCode v2** in the service (VSCode/Jupyter). This config is in the
    *native v2 format* and cannot be read by OpenCode v1:
    ```bash

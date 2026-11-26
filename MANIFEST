@@ -1,0 +1,12 @@
+# Runtime files shipped in the release tarball (read by scripts/build_dist.sh, tested by scripts/check_install.py).
+# One tracked path per line (directory = everything tracked under it). Keep the .opencode/ layout: install.sh reads it.
+# Dev-only material (scripts/, UPSTREAM.lock, README.md, INSTALL.md, onyxia-init.sh) stays out.
+opencode.jsonc
+AGENTS.md
+install.sh
+LICENSE
+THIRD_PARTY.md
+licenses
+prompts
+.opencode/skills
+.opencode/commands
