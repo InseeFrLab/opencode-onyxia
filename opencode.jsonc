@@ -32,6 +32,9 @@
     "onyxia": {
       "name": "SSPCloud LLM (self-hosted)",
       "package": "aisdk:@ai-sdk/openai-compatible",
+      // Verified against the gateway: thinking output comes back in `reasoning_content`
+      // (so opencode keeps it out of the visible answer and the next request's content).
+      "compatibility": { "reasoningField": "reasoning_content" },
       "settings": {
         "baseURL": "{env:OPENAI_BASE_URL}",
         "apiKey": "{env:OPENAI_API_KEY}"
@@ -54,11 +57,27 @@
             },
             {
               // Qwen3 thinking mode: near-greedy decoding sends the reasoning
-              // trace into repetition loops — use the sampling Qwen recommends.
+              // trace into repetition loops — use the sampling Qwen recommends
+              // (temperature 0.6, top_p 0.95, top_k 20, min_p 0).
               "id": "plan",
               "body": {
                 "temperature": 0.6,
                 "top_p": 0.95,
+                "top_k": 20,
+                "min_p": 0,
+                "chat_template_kwargs": { "enable_thinking": true }
+              }
+            },
+            {
+              // Same sampling, selectable on ANY agent from the variant switcher
+              // (e.g. `build` + thinking for a hard debugging session) without
+              // changing agent: `onyxia/qwen3-8-27b#think`.
+              "id": "think",
+              "body": {
+                "temperature": 0.6,
+                "top_p": 0.95,
+                "top_k": 20,
+                "min_p": 0,
                 "chat_template_kwargs": { "enable_thinking": true }
               }
             }
@@ -96,6 +115,9 @@
     }
   },
   // ---- Default model ----
+  // The platform injects OPENAI_DEFAULT_MODEL=qwen3-6-35b-moe, and the gateway also serves
+  // `qwen-36` ("Coder"); this repo deliberately defaults to qwen3-8-27b (see git history).
+  // To try another model, declare it under providers.onyxia.models and select it with /models.
   "model": "onyxia/qwen3-8-27b",
   // ---- Default agent at startup ----
   "default_agent": "plan",
@@ -114,12 +136,24 @@
     "max_lines": 200,
     "max_bytes": 20000
   },
+  // qwen3-vl has a 64k window: bound the image size (v2 default is 2000 px per side).
+  "media": {
+    "image": { "max_width": 1280, "max_height": 1280 }
+  },
+  // Runaway-delegation guard for local models: subagents cannot spawn subagents.
+  "experimental": {
+    "subagent_depth": 1
+  },
   "compaction": {
     "auto": true,
     // v2 has no `prune` / `tail_turns` (v1 kept the last 4 user turns). Recent
     // context is retained by token budget instead: ~4 turns of capped tool
     // output (200 lines / 20 KB each) fits in 16k tokens. Tune if needed.
-    "keep": { "tokens": 16000 }
+    "keep": { "tokens": 16000 },
+    // Token headroom reserved for the compaction summary (~15% of the 131k window).
+    // Integer on purpose: opencode 2.1.2 silently ignores the documented percentage
+    // form ("15%"), checked with `opencode debug config`.
+    "buffer": 20000
   },
   // =========================================================================
   //  PERMISSIONS — OpenCode is NOT sandboxed: every `shell` runs on the pod.
@@ -142,6 +176,8 @@
   // =========================================================================
   "permissions": [
     { "action": "webfetch", "resource": "*", "effect": "ask" },
+    // Official MLflow docs (skill `mlflow-docs`): public pages, no data leaves.
+    { "action": "webfetch", "resource": "https://mlflow.org/docs/*", "effect": "allow" },
     // v2 ALLOWS paths outside the project by default (v1 asked). Restore the
     // v1 behaviour: ask before touching anything outside the project.
     { "action": "external_directory", "resource": "*", "effect": "ask" },
@@ -276,6 +312,7 @@
       "mode": "subagent",
       "description": "Python data science / ML specialist on Onyxia (uv, ruff, polars, pandas, scikit-learn, pyarrow, s3fs). Use to write or refactor Python code for analysis, modelling, or pipelines.",
       "model": "onyxia/qwen3-8-27b#build",
+      "steps": 60,
       "system": "{file:./prompts/shared/base.md}\n\n{file:./prompts/python-ds.md}\n\n{file:./prompts/shared/completion-contract.md}",
       "permissions": [
         { "action": "edit", "resource": "*", "effect": "allow" }
@@ -285,6 +322,7 @@
       "mode": "subagent",
       "description": "R data science specialist (tidyverse, data.table, targets, renv, testthat, aws.s3, arrow). Use for any R code for analysis, modelling, or reproducible pipelines.",
       "model": "onyxia/qwen3-8-27b#build",
+      "steps": 60,
       "system": "{file:./prompts/shared/base.md}\n\n{file:./prompts/r-ds.md}\n\n{file:./prompts/shared/completion-contract.md}",
       "permissions": [
         { "action": "edit", "resource": "*", "effect": "allow" }
@@ -294,6 +332,7 @@
       "mode": "subagent",
       "description": "Onyxia MLOps engineer: MLflow experiment tracking, parallel training via Argo Workflows (argo submit, CronWorkflow), GitOps deployment via ArgoCD, model packaging and productionization. Use to industrialize/deploy a model or schedule recurring jobs.",
       "model": "onyxia/qwen3-8-27b#build",
+      "steps": 60,
       "system": "{file:./prompts/shared/base.md}\n\n{file:./prompts/mlops.md}\n\n{file:./prompts/shared/completion-contract.md}",
       "permissions": [
         { "action": "edit", "resource": "*", "effect": "allow" }
@@ -310,6 +349,9 @@
         { "action": "webfetch", "resource": "*", "effect": "deny" },
         { "action": "websearch", "resource": "*", "effect": "deny" },
         { "action": "subagent", "resource": "*", "effect": "deny" },
+        // GenAI MLflow skills are about building LLM apps, not reviewing a diff.
+        { "action": "skill", "resource": "mlflow-trace-*", "effect": "deny" },
+        { "action": "skill", "resource": "mlflow-evaluation", "effect": "deny" },
         // Catch-all is "deny", not "ask": a subagent has no user to ask, so an
         // "ask" here would stall. Same ordering rule as the global block —
         // broad first, narrow last.
@@ -381,7 +423,9 @@
         { "action": "edit", "resource": "*", "effect": "deny" },
         { "action": "shell", "resource": "*", "effect": "deny" },
         { "action": "subagent", "resource": "*", "effect": "deny" },
-        { "action": "webfetch", "resource": "*", "effect": "deny" }
+        { "action": "webfetch", "resource": "*", "effect": "deny" },
+        // Vision model: it only looks at images, no skills (smaller prompt).
+        { "action": "skill", "resource": "*", "effect": "deny" }
       ]
     }
   },
