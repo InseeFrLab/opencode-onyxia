@@ -144,6 +144,8 @@ confidentiality precautions: see `INSTALL.md`.
   runs **without prompts**; only a short list of dangerous actions asks, and catastrophic ones are blocked
   outright — see **Permissions** below.
 - MCP disabled by default (a "remote" MCP would send context off-platform).
+- Only the self-hosted gateway (`onyxia`) can be used as an LLM provider: a `provider.use` policy hides every other one
+  (hosted OpenCode tier, OpenAI, Bedrock…) and a project cannot add its own, so prompts stay inside the SSP Cloud perimeter.
 - On the public instance, only handle public / non-sensitive data.
 - Never embed a token in a Git remote URL; use `gh auth login` or a credential
   helper (and `/check-secrets` before committing).
@@ -155,7 +157,7 @@ confidentiality precautions: see `INSTALL.md`.
 |---|---|---|
 | **Baseline** `shell * allow` | Everything routine runs silently | `tail`, `rg`, `jq`, `mkdir`, `cp`, `uv`, `python`, `quarto`, `duckdb`, `aws s3 ls/cp`, `git add/commit`, `kubectl get`, plain `curl` downloads |
 | **Ask** (`permissions`) | A human decides | `rm`, `git push` / `reset --hard` / `clean`, copying to **`diffusion/`** (public to all Onyxia users), `aws s3 mv/sync/presign`, `kubectl apply/exec`, `helm upgrade`, `argo submit`, `vault kv put`, uploads (`curl -d/-F/-T`, `ssh`/`scp`), `env`/`printenv`, dotenv files, paths outside the project (except skills, `/tmp`, caches), unknown websites |
-| **Hard deny** (`policies`) | Blocked without a prompt | `sudo`, `rm -rf` of `/` or `~`, `curl … \| sh`, `eval`, **all remote deletes** (`aws s3 rm/rb`, `mc rm`, `kubectl delete`, `argo delete`, `helm uninstall`, `vault kv delete`), `nc`/`socat`, `~/.ssh` / `~/.gnupg` / `~/.netrc`, editing the global config |
+| **Hard deny** (`policies`) | Blocked without a prompt | `sudo`, `rm -rf` of `/` or `~`, `curl … \| sh`, `eval`, **all remote deletes** (`aws s3 rm/rb`, `mc rm`, `kubectl delete`, `argo delete`, `helm uninstall`, `vault kv delete`), `nc`/`socat`, `~/.ssh` / `~/.gnupg` / `~/.netrc`, editing the global config, **any LLM provider other than `onyxia`** |
 
 How to work with it:
 - **Policies cannot be overridden** by a project's own `opencode.json`, nor by "Allow always" (the global config outranks
@@ -180,7 +182,143 @@ How to work with it:
 - **Test the rules** after any change (no model needed, ~1 min):
   `python3 -I scripts/check_permissions.py` (`--ref HEAD~1` replays the table on an older config).
 
+## Overriding the config for one project
+The config is installed **globally** (`~/.config/opencode`); a project overrides only what differs, committed with
+the project — nothing to copy. Everything below follows the official docs
+([Config](https://opencode.ai/docs/config/), [Agents](https://opencode.ai/docs/agents/),
+[Skills](https://opencode.ai/docs/skills/), [Commands](https://opencode.ai/docs/commands/),
+[Instructions](https://opencode.ai/docs/instructions/), [Permissions](https://opencode.ai/docs/permissions/),
+[Policies](https://opencode.ai/docs/policies/), [MCP servers](https://opencode.ai/docs/mcp-servers/)) and was tested
+against opencode 2.1.2.
+
+```
+my-project/
+├── AGENTS.md                  # extra instructions, added to the global Onyxia AGENTS.md
+├── opencode.jsonc             # project settings (or .opencode/opencode.jsonc — use ONE of the two forms)
+└── .opencode/
+    ├── skills/<id>/SKILL.md   # project skills
+    ├── commands/<name>.md     # project slash commands
+    └── agents/<name>.md       # project agents
+```
+Write overrides in the native v2 shape (`permissions`, `agents`, `commands`, `providers`, `mcp.servers`; actions
+`shell` / `subagent`, not `bash` / `task`) and do not mix v1 and v2 syntax inside one nested entry.
+
+**Precedence**, lowest to highest: ① `~/.config/opencode/opencode.jsonc` (this repo, installed by `install.sh`) →
+② project `opencode.json(c)` (parent directories first, the nearest last) → ③ `.opencode/opencode.json(c)`
+(beats every direct `opencode.json(c)`) → ④ `/etc/opencode/opencode.json` (managed: users and projects cannot override
+it). Settings that do not conflict are kept. `policies` are evaluated in the **reverse** order, so a project can never
+lift this repo's hard denies. `update` is read from the global config only.
+
+| What | How a project combines with the global config |
+|---|---|
+| scalars (`model`, `default_agent`, `steps`…) | the nearest wins |
+| `permissions` | project rules are appended after the global ones, last match wins (but see the agent gotcha below) |
+| `agents.<id>` | merged by id: scalars replace, `permissions` append, `disabled: true` removes it, a new id adds one |
+| `providers.<id>.models` | merged: your model is added next to the shipped ones |
+| `skills`, `instructions` | the lists are combined |
+| a skill with the same ID, a command with the same name | the project one **replaces** the global one |
+| `mcp.servers.<name>` | the **whole object is replaced**: repeat `type`, `url`/`command`… |
+| `AGENTS.md` files | all are combined; conflicts are not resolved |
+
+### Model and agents
+```jsonc
+// opencode.jsonc
+{
+  "agents": {
+    "build": { "model": "onyxia/qwen3-8-27b#think" },   // thinking mode for this project (variants: see above)
+    "python-ds": { "steps": 25 },                       // the shipped prompt, permissions and model are kept
+    "reviewer": { "disabled": true }                    // remove a shipped agent
+  },
+  "providers": { "onyxia": { "models": {                // add a model served by the gateway, then select it
+    "qwen3-6-35b-moe": { "name": "Qwen3.6 35B MoE", "capabilities": { "tools": true },
+                         "limit": { "context": 131072, "output": 16384 } }
+  } } }
+}
+```
+A new agent is a Markdown file, e.g. `.opencode/agents/data-cleaner.md`: the frontmatter is an `agents` entry and the
+body is its system prompt (a custom agent starts from your prompt only; the shipped ones start from
+`prompts/shared/base.md`).
+```markdown
+---
+description: Cleans raw survey extracts with duckdb
+mode: subagent
+steps: 20
+permissions:
+  - action: edit
+    resource: "data/*"
+    effect: deny
+---
+You clean raw extracts into tidy Parquet. Never edit files under data/.
+```
+
+### Permissions
+```jsonc
+{
+  "permissions": [
+    { "action": "shell", "resource": "kubectl scale *", "effect": "allow" },   // relax an ask for this project
+    { "action": "shell", "resource": "git commit*", "effect": "ask" }          // or tighten something
+  ],
+  "agents": {
+    // build, python-ds, r-ds and mlops ship their own `edit * allow`; it is appended AFTER the project rules,
+    // so restrict edits inside the agents (repeat for r-ds and mlops if you use them):
+    "build":     { "permissions": [{ "action": "edit", "resource": "src/legacy/*", "effect": "ask" }] },
+    "python-ds": { "permissions": [{ "action": "edit", "resource": "src/legacy/*", "effect": "ask" }] }
+  }
+}
+```
+- **Agent rules are appended after project rules.** A top-level project `edit … ask` is overridden by those agents'
+  `edit * allow` (tested), and a top-level `shell … allow` works for `build` but not for `plan` (its `shell * ask`)
+  or `reviewer` (its deny list): put the rule under `agents.<id>.permissions` for those.
+- A project can relax an `ask`, but **not** a hard deny: `sudo`, `kubectl delete`… stay blocked whatever the
+  project says (see **Permissions** above for the model, both option forms and `--auto`).
+- To hide a shipped skill from the model: `{ "action": "skill", "resource": "mlflow-*", "effect": "deny" }`.
+
+### Skills, commands, instructions
+- **Skills**: `.opencode/skills/<id>/SKILL.md` adds a skill (ID = directory name; `name` and `description` in the
+  frontmatter; `references/`, `scripts/` next to it). Reusing a shipped ID — copy the whole directory — replaces
+  that skill for the project. `"skills": ["./team-skills"]` adds extra folders (relative to the working directory).
+- **Commands**: `.opencode/commands/etl.md` becomes `/etl`; the same name as a shipped command (`/verify`,
+  `/new-project`, `/diagnose`, `/check-secrets`) replaces it.
+  ```markdown
+  ---
+  description: Run the survey ETL
+  agent: build
+  ---
+  Run the ETL for $ARGUMENTS and report row counts.
+  ```
+- **Instructions**: a project `AGENTS.md` is loaded after the global Onyxia one (it adds to it, it cannot remove
+  it): put the bucket/prefix convention, dataset names, `uv`/`renv`/Quarto conventions, "never touch `data/raw`".
+  `"instructions": ["docs/guidelines/*.md"]` adds files, globs or URLs; `"references"` makes a sibling folder or a Git
+  repository available as named context (both per the official docs).
+
+### MCP and secrets
+```jsonc
+// enable the data.gouv.fr MCP server for this project only (the whole object is replaced: repeat type + url)
+{ "mcp": { "servers": { "datagouv": { "type": "remote", "url": "https://mcp.data.gouv.fr/mcp", "disabled": false } } } }
+```
+`opencode mcp add <name> …` writes the project config (`--global` for every project). A remote MCP sends context off
+the platform: public data only. Keep secrets out of the repository: `{env:NAME}` / `{file:~/.secrets/key}` in the
+config, with the value injected by Vault as an environment variable.
+
+### Limits, trust, and checking what applies
+- A repository's `opencode.jsonc` and `.opencode/` are **code**: they can add MCP servers, commands and agents, so
+  review them before running opencode in a clone you do not trust. They **cannot** redirect LLM traffic: a
+  `provider.use` policy allows only `onyxia`, so a provider added by a project is unusable (an agent pointing at it
+  falls back to the default model, an explicit `-m` fails with "Model unavailable"). MCP servers are not covered —
+  the `mcp.use` policy needs a newer opencode than the 2.1.2 pinned on the platform.
+  To allow another provider on purpose, add a `provider.use` allow to the global `policies`.
+  `OPENCODE_DISABLE_PROJECT_CONFIG=1` makes opencode ignore project config and project skills (for the background
+  service: `opencode service set env OPENCODE_DISABLE_PROJECT_CONFIG 1 && opencode service restart`). Platform admins
+  can enforce rules users cannot change with `policies` in `/etc/opencode/opencode.json`.
+- `opencode debug config` lists the config sources in load order, `opencode debug agents` the resolved agents (model,
+  steps, permissions), `opencode mcp list` the MCP servers. The background service caches the config: if an edit does
+  not show up, run `opencode reload`.
+- `python3 -I scripts/check_permissions.py` tests the permission model (its sandbox includes a project config that
+  relaxes one ask and tries to lift two hard denies).
+
 ## Customization
+These steps change the shipped config for everyone; to change a single project only, see
+**Overriding the config for one project** above.
 - Add an agent: new block under `agents` (`system` = `{file:./prompts/<name>.md}`) + a prompt in `prompts/`.
 - Add know-how: new folder `.opencode/skills/<name>/SKILL.md`
   (YAML header with `name` + `description` required). Larger skills can bundle

@@ -121,14 +121,10 @@ The global config applies everywhere; no per-project installation is needed.
 
 ## Overriding locally in a project (optional)
 
-Project config takes priority over the global one and **combines** with it.
-In a given repository you can:
-
-- add an `AGENTS.md` at the root -> project-specific instructions (appended to the global context);
-- add `.opencode/skills/<name>/SKILL.md` -> project-specific skills;
-- add `.opencode/commands/<name>.md` -> project-specific commands;
-- add an `opencode.json` (or `opencode.jsonc`) at the root -> settings that override the global ones
-  (e.g. change the default model, restrict permissions).
+A project adds to or overrides the global config with its own `opencode.jsonc`, `AGENTS.md` and
+`.opencode/{skills,commands,agents}/` — precedence, merge rules, recipes (model, permissions, agents, skills,
+commands, instructions, MCP) and caveats are in the README section
+**"Overriding the config for one project"**.
 
 ## MCP servers (optional, disabled by default)
 
@@ -179,7 +175,8 @@ After a `git pull` of the repository, simply rerun:
 
 - OpenCode is not sandboxed: `shell` commands run on the pod. Routine commands run without
   prompts; `opencode.jsonc` asks for `rm`, `git push`, publishing to `diffusion/`, cluster mutations and uploads,
-  and hard-denies `sudo` and remote deletions (README, "Permissions"). Check changes with
+  and hard-denies `sudo`, remote deletions and every LLM provider except the self-hosted `onyxia` one
+  (README, "Permissions"). Check changes with
   `python3 -I scripts/check_permissions.py`.
 - The models being self-hosted, exchanges stay within the Insee perimeter.
 - The gateway does not publish context/output token limits; the `limit` values

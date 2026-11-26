@@ -394,6 +394,13 @@
   //  obfuscation such as `r''m` still get through).
   // =========================================================================
   "policies": [
+    // LLM endpoints: only the self-hosted gateway ("onyxia") may be used. Data sent to the agents must stay
+    // inside the SSP Cloud perimeter, so a repository (or a user) cannot redirect traffic to another provider:
+    // a denied provider disappears from the catalog and model selection even with valid credentials.
+    // To allow another provider on purpose, add `{ "action": "provider.use", "resource": "<id>", "effect": "allow" }`
+    // right after the "onyxia" line below, in this global file.
+    { "action": "provider.use", "resource": "*", "effect": "deny" },
+    { "action": "provider.use", "resource": "onyxia", "effect": "allow" },
     // privilege escalation (also behind wrappers: env/timeout/nohup/xargs/absolute path/bash -c — verified live)
     { "action": "tool.use", "resource": "shell:sudo *", "effect": "deny" },
     { "action": "tool.use", "resource": "shell:* sudo *", "effect": "deny" },
