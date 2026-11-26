@@ -53,6 +53,42 @@ source ~/.bashrc
 
 ## 4. Install the config globally
 
+### Method 0 — Onyxia init script (recommended on SSP Cloud, no manual step)
+
+Onyxia runs a *personal initialization script* at the start of every service. In Onyxia → **My account** →
+**Services**, set:
+
+| Field | Value |
+|---|---|
+| Initialization script | `https://raw.githubusercontent.com/inseefrlab/opencode-onyxia/main/onyxia-init.sh` |
+| Arguments | e.g. `--version v1.0.0` (default: latest release), `--bare` (models only), `--claude` |
+
+At start-up, `onyxia-init.sh`:
+1. installs opencode v2 with the official installer, unless a v2 `opencode` is already on `PATH`;
+2. downloads the release tarball `opencode-onyxia.tar.gz` and its `.sha256` from GitHub Releases, verifies the
+   checksum, and runs the bundled `install.sh` with your arguments (same result as Method A);
+3. warns if `OPENAI_BASE_URL` / `OPENAI_API_KEY` are missing (on SSP Cloud the platform injects them).
+
+It **never makes the service fail**. Every error is logged to `~/.cache/opencode-onyxia-init.log`, and the service
+starts without the config.
+
+Things to know:
+- Onyxia fetches the script with `curl` **without `-L`**, so the URL must not redirect. Use the
+  `raw.githubusercontent.com` URL above. `github.com/.../releases/latest/download/onyxia-init.sh` redirects and
+  would run nothing. To pin the script itself, replace `main` with a tag.
+- Pin `--version` for reproducible services. `latest` follows each new release.
+- Onyxia accepts a single init script. If you already have one, call this script from it:
+  ```bash
+  curl -fsSL https://raw.githubusercontent.com/inseefrlab/opencode-onyxia/main/onyxia-init.sh | bash -s -- --version v1.0.0
+  ```
+- Overrides: `OPENCODE_ONYXIA_REPO=<owner>/<repo>` (a fork's releases), `OPENCODE_ONYXIA_URL=<base url>` (any
+  location holding the two files, e.g. a MinIO bucket), `OPENCODE_ONYXIA_SKIP_OPENCODE=1`.
+- The checksum guards against a corrupted or truncated download. It is fetched from the same release, so it does
+  not authenticate the publisher.
+
+The tarball contains only the runtime files listed in `MANIFEST` (config, `AGENTS.md`, prompts, skills,
+commands, `install.sh`, licenses) plus a `VERSION` file. No dev scripts or tests.
+
 ### Method A — provided script (recommended)
 
 From the unpacked repository folder:
@@ -99,7 +135,7 @@ It installs **no** agents, permissions, policies, MCP servers, skills, commands,
   are left in place and stay active; the script says so.
 - Re-run `./install.sh --bare` after a `git pull` to pick up model changes. You still need `OPENAI_BASE_URL` and
   `OPENAI_API_KEY` (step 3 above).
-- `python3 -I scripts/check_install.py` tests what the full and the bare install write.
+- `python3 -I scripts/check_install.py` tests the full and bare installs, the release tarball and `onyxia-init.sh`.
 
 ### Method B — manual
 
@@ -191,9 +227,24 @@ To update, review the upstream diff, bump the SHA in `UPSTREAM.lock`, re-run the
 edit no longer applies) and update `THIRD_PARTY.md`. The DuckDB skills are adapted by hand: port upstream changes
 manually and re-test the snippets.
 
+## Publishing a release (maintainers)
+
+```bash
+python3 -I scripts/check_permissions.py && python3 -I scripts/check_install.py
+git tag v1.2.0 && git push origin v1.2.0
+```
+
+`.github/workflows/release.yml` reruns both checks, then builds the tarball with `scripts/build_dist.sh` and
+publishes a GitHub Release with `opencode-onyxia.tar.gz`, `opencode-onyxia.tar.gz.sha256` and `onyxia-init.sh`.
+The same workflow runs the checks on every pull request. To ship a new file, add its path to `MANIFEST`: the build
+fails on an untracked or misspelled path, and `check_install.py` compares the tarball with `MANIFEST`. Build
+locally with `scripts/build_dist.sh v0.0.0-test` (output in `dist/`, git-ignored). Two builds of the same commit
+produce identical bytes.
+
 ## Updating the global config
 
-After a `git pull` of the repository, simply rerun:
+With Method 0, new services pick up the release that `--version` points to (or the newest one, with `latest`).
+With a clone, after a `git pull`, rerun:
 
 ```bash
 ./install.sh

@@ -14,6 +14,7 @@ import re
 import shutil
 import subprocess
 import sys
+import tarfile
 import tempfile
 from pathlib import Path
 
@@ -55,6 +56,11 @@ def install(src: Path, dest: Path, home: Path, *args: str) -> subprocess.Complet
 
 def tree(path: Path) -> list[str]:
     return sorted(str(p.relative_to(path)) for p in path.rglob("*")) if path.exists() else []
+
+
+def clean_tree(path: Path) -> list[str]:
+    """tree() without local bytecode caches, which a repo checkout may hold but a release never ships."""
+    return [p for p in tree(path) if "__pycache__" not in p]
 
 
 results: list[tuple[str, bool, str]] = []
@@ -176,7 +182,132 @@ def main() -> int:
             str(tree(dest)),
         )
 
-        # 6. the bare config loads in a real opencode service -------------------------------------------------
+        # 6. release tarball: only the MANIFEST paths, installs like the repo ---------------------------------
+        dist = work / "dist"
+        r = subprocess.run(
+            ["bash", str(REPO / "scripts" / "build_dist.sh"), "v0.0.0-test", str(dist)],
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=120,
+        )
+        check("build_dist.sh succeeds", r.returncode == 0, r.stderr.strip()[-200:])
+        manifest = [
+            ln.strip() for ln in (REPO / "MANIFEST").read_text().splitlines() if ln.strip() and not ln.startswith("#")
+        ]
+        tracked = subprocess.run(
+            ["git", "-C", str(REPO), "ls-files", "--", *manifest],
+            capture_output=True,
+            text=True,
+            check=True,
+        ).stdout.split()
+        with tarfile.open(dist / "opencode-onyxia.tar.gz") as tf:
+            names = sorted(m.name.split("/", 1)[1] for m in tf.getmembers() if m.isfile())
+            src = work / "dist-src"
+            tf.extractall(src, filter="data")
+        check(
+            "tarball holds exactly the tracked MANIFEST files + VERSION",
+            names == sorted([*tracked, "VERSION"]),
+            str(sorted(set(names) ^ {*tracked, "VERSION"}))[:200],
+        )
+        check(
+            "tarball ships no dev scripts",
+            not any(n.startswith("scripts/") for n in names),
+        )
+        src = next(src.iterdir())
+        check(
+            "VERSION file holds the version",
+            (src / "VERSION").read_text().strip() == "v0.0.0-test",
+        )
+        for args, label in (((), "full"), (("--bare",), "bare")):
+            d_repo, d_dist, h = (
+                work / f"cmp-{label}-repo",
+                work / f"cmp-{label}-dist",
+                work / f"cmp-{label}-home",
+            )
+            h.mkdir()
+            install(REPO, d_repo, h, *args)
+            install(src, d_dist, h, *args)
+            check(
+                f"{label} install from the tarball == from the repo",
+                clean_tree(d_repo) == tree(d_dist) and tree(d_dist) != [],
+                str(sorted(set(clean_tree(d_repo)) ^ set(tree(d_dist))))[:200],
+            )
+        r2 = subprocess.run(
+            [
+                "bash",
+                str(REPO / "scripts" / "build_dist.sh"),
+                "v0.0.0-test",
+                str(work / "dist2"),
+            ],
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=120,
+        )
+        check(
+            "the build is reproducible (same sha256 twice)",
+            r2.returncode == 0
+            and (dist / "opencode-onyxia.tar.gz.sha256").read_text()
+            == (work / "dist2" / "opencode-onyxia.tar.gz.sha256").read_text(),
+        )
+
+        # 7. onyxia-init.sh: installs from a release, refuses a bad checksum, never fails the service ---------
+        def init(base: Path, home: Path, dest: Path, *args: str) -> subprocess.CompletedProcess:
+            env = {
+                "PATH": "/usr/bin:/bin:/usr/local/bin",
+                "HOME": str(home),
+                "OPENCODE_CONFIG_DIR": str(dest),
+                "OPENCODE_ONYXIA_URL": base.as_uri(),
+                "OPENCODE_ONYXIA_SKIP_OPENCODE": "1",
+            }
+            home.mkdir(parents=True, exist_ok=True)
+            return subprocess.run(
+                ["bash", "-s", "--", *args],
+                input=(REPO / "onyxia-init.sh").read_text(),
+                env=env,
+                capture_output=True,
+                text=True,
+                check=False,
+                timeout=120,
+            )
+
+        dest, home = work / "init" / "cfg", work / "init" / "home"
+        r = init(dist, home, dest)
+        check(
+            "init script (piped like Onyxia) installs the full config",
+            r.returncode == 0 and tree(dest) == clean_tree(work / "cmp-full-repo"),
+            (r.stdout + r.stderr)[-300:],
+        )
+        check(
+            "init script logs to ~/.cache",
+            (home / ".cache" / "opencode-onyxia-init.log").exists(),
+        )
+        dest = work / "init-bare" / "cfg"
+        r = init(dist, work / "init-bare" / "home", dest, "--version", "v9", "--bare")
+        check(
+            "init script passes --bare to install.sh",
+            tree(dest) == ["opencode.jsonc"],
+            str(tree(dest)),
+        )
+        bad = work / "bad"
+        shutil.copytree(dist, bad)
+        (bad / "opencode-onyxia.tar.gz.sha256").write_text(f"{'0' * 64}  opencode-onyxia.tar.gz\n")
+        dest = work / "init-bad" / "cfg"
+        r = init(bad, work / "init-bad" / "home", dest)
+        check(
+            "bad checksum: nothing installed, exit 0, error reported",
+            r.returncode == 0 and not dest.exists() and "checksum mismatch" in r.stdout + r.stderr,
+            f"rc={r.returncode} {tree(dest)}",
+        )
+        r = init(work / "missing", work / "init-404" / "home", work / "init-404" / "cfg")
+        check(
+            "unreachable release: exit 0, error reported",
+            r.returncode == 0 and "download failed" in r.stdout + r.stderr,
+            (r.stdout + r.stderr)[-200:],
+        )
+
+        # 8. the bare config loads in a real opencode service -------------------------------------------------
         if shutil.which("opencode") is None:
             print("skip bare config loaded by opencode (opencode not on PATH)")
         else:
