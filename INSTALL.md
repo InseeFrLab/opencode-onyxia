@@ -9,10 +9,10 @@ Target tree once installed:
 
 ```txt
 ~/.config/opencode/
-├── opencode.jsonc      # provider, models, agents, permissions
+├── opencode.jsonc      # native v2 config: providers, agents, permissions
 ├── AGENTS.md           # Onyxia context applied to ALL sessions
 ├── prompts/*.md        # agent system prompts
-├── command/*.md        # slash commands (/new-project, /check-secrets, /diagnose)
+├── commands/*.md       # slash commands (/new-project, /check-secrets, /diagnose)
 └── skills/<name>/      # global skills (NB: without the .opencode prefix)
     ├── SKILL.md        #   instructions loaded on demand
     ├── references/     #   optional: detailed recipes, loaded only when needed
@@ -22,11 +22,14 @@ Target tree once installed:
 
 ---
 
-## 1. Install OpenCode
+## 1. Install OpenCode v2
+
+This configuration uses the **native OpenCode v2 format** (it cannot be read by v1).
+Remove any v1 install first — v1 and v2 both provide the `opencode` command.
 
 ```bash
-curl -fsSL https://opencode.ai/install | bash
-opencode --version
+curl -fsSL https://opencode.ai/v2/install | bash
+opencode --version      # must print v2.x
 ```
 
 ## 2. Get an Open WebUI API key
@@ -59,10 +62,10 @@ cd opencode-onyxia
 ./install.sh
 ```
 
-The script copies `opencode.jsonc`, `AGENTS.md`, `prompts/` and `command/`
+The script copies `opencode.jsonc`, `AGENTS.md`, `prompts/` and `commands/`
 into `~/.config/opencode/`, and the skills into `~/.config/opencode/skills/`
-(it backs up an existing config first, and keeps bundled skill scripts
-executable).
+(it backs up an existing config first — moving a legacy v1 `command/` directory into the
+backup — and keeps bundled skill scripts executable).
 
 Optional — also expose the skills to **Claude Code**:
 
@@ -74,11 +77,11 @@ Optional — also expose the skills to **Claude Code**:
 
 ```bash
 cd opencode-onyxia
-mkdir -p ~/.config/opencode/prompts ~/.config/opencode/skills ~/.config/opencode/command
+mkdir -p ~/.config/opencode/prompts ~/.config/opencode/skills ~/.config/opencode/commands
 cp  opencode.jsonc AGENTS.md  ~/.config/opencode/
 cp -r prompts/.               ~/.config/opencode/prompts/
 cp -r .opencode/skills/.      ~/.config/opencode/skills/
-cp -r .opencode/command/.     ~/.config/opencode/command/
+cp -r .opencode/commands/.    ~/.config/opencode/commands/
 ```
 
 ### Method C — track the repository with Git (easy updates via `git pull`)
@@ -105,7 +108,7 @@ cd ~/work/any-project
 opencode
 ```
 
-- `/models` -> `qwen3-6-35b-moe`, `gemma4-26b-moe`, `qwen3-vl` under
+- `/models` -> `qwen3-8-27b`, `gemma4-26b-moe`, `qwen3-vl` under
   "SSPCloud LLM (self-hosted)".
 - **Tab** -> switch `build` <-> `plan`.
 - `@python-ds`, `@r-ds`, `@mlops`, `@reviewer`, `@dataviz-vision` -> subagents
@@ -123,13 +126,13 @@ In a given repository you can:
 
 - add an `AGENTS.md` at the root -> project-specific instructions (appended to the global context);
 - add `.opencode/skills/<name>/SKILL.md` -> project-specific skills;
-- add `.opencode/command/<name>.md` -> project-specific commands;
-- add an `opencode.json` at the root -> settings that override the global ones
+- add `.opencode/commands/<name>.md` -> project-specific commands;
+- add an `opencode.json` (or `opencode.jsonc`) at the root -> settings that override the global ones
   (e.g. change the default model, restrict permissions).
 
 ## MCP servers (optional, disabled by default)
 
-`opencode.jsonc` pre-declares two `remote` MCP servers with `"enabled": false`:
+`opencode.jsonc` pre-declares two `remote` MCP servers with `"disabled": true`:
 
 - **excalidraw** (`https://api.excalidraw.com/api/v1/mcp`): diagram creation.
   Requires a key in `EXCALIDRAW_API_KEY`.
@@ -144,7 +147,7 @@ To enable: rather than editing the global config, prefer a per-project
 override — an `opencode.json` at the root of the repository concerned:
 
 ```json
-{ "mcp": { "datagouv": { "type": "remote", "url": "https://mcp.data.gouv.fr/mcp", "enabled": true } } }
+{ "mcp": { "servers": { "datagouv": { "type": "remote", "url": "https://mcp.data.gouv.fr/mcp", "disabled": false } } } }
 ```
 
 The `insee-public-data` skill documents this pattern and the non-MCP
@@ -160,7 +163,7 @@ After a `git pull` of the repository, simply rerun:
 
 ## Notes
 
-- OpenCode is not sandboxed: `bash` runs on the pod. The permissions in
+- OpenCode is not sandboxed: `shell` commands run on the pod. The permissions in
   `opencode.jsonc` ask for confirmation for network, k8s mutations and `rm`.
 - The models being self-hosted, exchanges stay within the Insee perimeter.
 - The gateway does not publish context/output token limits; the `limit` values
