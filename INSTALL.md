@@ -153,6 +153,20 @@ override — an `opencode.json` at the root of the repository concerned:
 The `insee-public-data` skill documents this pattern and the non-MCP
 alternatives (pynsee, R insee package, Parquet-first ingestion).
 
+## Maintaining the vendored third-party skills
+
+`THIRD_PARTY.md` documents the adapted DuckDB and MLflow skills. The MLflow ones are re-created from the revision
+pinned in `UPSTREAM.lock`:
+
+```bash
+python3 -I scripts/vendor_mlflow_skills.py     # downloads the pinned revision, re-applies the Onyxia edits
+git diff .opencode/skills                      # empty unless the pin or the script changed
+```
+
+To update, review the upstream diff, bump the SHA in `UPSTREAM.lock`, re-run the script (it fails loudly if an
+edit no longer applies) and update `THIRD_PARTY.md`. The DuckDB skills are adapted by hand: port upstream changes
+manually and re-test the snippets.
+
 ## Updating the global config
 
 After a `git pull` of the repository, simply rerun:
