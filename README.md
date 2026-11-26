@@ -8,14 +8,14 @@ within the Insee perimeter).
 ## Contents
 ```
 opencode-onyxia/
-├── opencode.jsonc                 # main config: provider, models, agents, permissions, MCP
+├── opencode.jsonc                 # main config (native opencode v2): providers, models/variants, agents, permissions, MCP
 ├── AGENTS.md                      # Onyxia context shared by ALL agents (loaded automatically)
 ├── install.sh                     # GLOBAL install into ~/.config/opencode (all projects)
 ├── INSTALL.md                     # detailed install guide
 ├── prompts/                       # one system prompt per agent
 │   ├── build.md  plan.md  python-ds.md  r-ds.md  mlops.md  reviewer.md  dataviz-vision.md
 └── .opencode/
-    ├── command/                   # slash commands (/new-project, /check-secrets, /diagnose)
+    ├── commands/                  # slash commands (/new-project, /check-secrets, /diagnose)
     └── skills/                    # know-how loaded on demand (1 folder = 1 skill)
         ├── onyxia-storage-s3/     # S3/MinIO access (+ references/, scripts/check_s3.sh)
         ├── eda-duckdb/            # exploratory analysis over S3 (+ scripts/profile_parquet.py)
@@ -33,9 +33,11 @@ opencode-onyxia/
 ```
 
 ## Installation (summary — detailed guide in `INSTALL.md`)
-1. **Install OpenCode** in the service (VSCode/Jupyter):
+1. **Install OpenCode v2** in the service (VSCode/Jupyter). This config is in the
+   *native v2 format* and cannot be read by OpenCode v1:
    ```bash
-   curl -fsSL https://opencode.ai/install | bash
+   curl -fsSL https://opencode.ai/v2/install | bash
+   opencode --version      # must print v2.x
    ```
 2. **Install the config globally** (applies to all projects) — script provided:
    ```bash
@@ -56,9 +58,9 @@ opencode-onyxia/
    ```bash
    curl -s "$OPENAI_BASE_URL/chat/completions" \
      -H "Authorization: Bearer $OPENAI_API_KEY" -H "Content-Type: application/json" \
-     -d '{"model":"qwen3-6-35b-moe","messages":[{"role":"user","content":"ping"}],"max_tokens":5}'
+     -d '{"model":"qwen3-8-27b","messages":[{"role":"user","content":"ping"}],"max_tokens":5}'
    ```
-   The model ids (`qwen3-6-35b-moe`, `gemma4-26b-moe`, `qwen3-vl`) are
+   The model ids (`qwen3-8-27b`, `gemma4-26b-moe`, `qwen3-vl`) are
    confirmed and already present in the config.
 5. **Launch**: `opencode` then `/models` to confirm the models are listed.
 
@@ -79,30 +81,50 @@ opencode-onyxia/
 ## Model allocation
 | Model | Role in the config |
 |---|---|
-| `qwen3-6-35b-moe` | default model — agent `plan` (**thinking mode on**) and agents `build`/`python-ds`/`r-ds`/`mlops` (thinking off, faster) |
-| `gemma4-26b-moe` | `small_model` (titles, summaries) + agent `reviewer` (diverse point of view) |
-| `qwen3-vl` | agent `dataviz-vision` — reading charts, diagrams, screenshots |
+| `qwen3-8-27b` | default model — agent `plan` (variant `#plan`, **thinking mode on**) and agents `build`/`python-ds`/`r-ds`/`mlops` (variant `#build`, thinking off, faster) |
+| `gemma4-26b-moe` | session titles (`agents.title`) + agent `reviewer` (variant `#review`, diverse point of view) |
+| `qwen3-vl` | agent `dataviz-vision` (variant `#vision`) — reading charts, diagrams, screenshots |
 
-### Thinking mode
-The gateway serves `qwen3-6-35b-moe` with thinking **on** by default. The config does not rely
-on that: the flag is pinned explicitly with `chat_template_kwargs.enable_thinking`, off on the
-model entry and back on for the `plan` agent only. Anything placed in a model's or an agent's
-`options` block is forwarded verbatim into the request body, so to give another agent a
-reasoning trace just add:
+### Sampling and thinking mode (model variants)
+The gateway serves `qwen3-8-27b` with thinking **on** by default. The config does not rely
+on that: `chat_template_kwargs.enable_thinking` is pinned to `false` on the model entry, and the
+`plan` agent turns it back on.
+
+> **OpenCode v2 change:** an agent's `request.body` (v1: `temperature`, `top_p`, `options`) is
+> accepted but **never sent to the model**. Sampling and provider options therefore live in
+> model **variants** (`providers.onyxia.models.<model>.variants`), and an agent selects one with
+> `provider/model#variant`, e.g. `"model": "onyxia/qwen3-8-27b#plan"`.
+
+To give another agent a reasoning trace, point it at the `#plan` variant (thinking on,
+`temperature` 0.6, `top_p` 0.95 — Qwen3 loops on repetitions when it reasons under near-greedy
+decoding), or add a variant:
 ```jsonc
-"options": { "chat_template_kwargs": { "enable_thinking": true } }
+"variants": [
+  { "id": "deep", "body": { "temperature": 0.6, "top_p": 0.95,
+                            "chat_template_kwargs": { "enable_thinking": true } } }
+]
 ```
-and raise its `temperature` to ~0.6 with `"top_p": 0.95` — Qwen3 loops on repetitions when it
-reasons under near-greedy decoding.
+
+## Migrated from OpenCode v1
+`opencode.jsonc` is now **native v2** (`providers`, `agents`, ordered `permissions[]`,
+`mcp.servers`, `update`, `commands/`). v1 and v2 share the same config locations, so v1 can no
+longer read these files. Things that behave differently from the v1 version of this repo:
+- sampling/thinking → model variants (see above);
+- `compaction.prune` / `tail_turns` no longer exist → `compaction.keep.tokens`;
+- `experimental.continue_loop_on_deny` is ignored by v2;
+- v2 allows paths outside the project by default → an `external_directory: ask` rule restores v1's behaviour;
+- permission actions renamed: `bash` → `shell`, `task` → `subagent`.
+
+Official guide: <https://opencode.ai/docs/migrate-v1/>.
 
 ## Bundled MCP servers (disabled by default)
 Two `remote` servers are pre-declared in `opencode.jsonc` with
-`"enabled": false`: **excalidraw** (diagrams, requires `EXCALIDRAW_API_KEY`)
+`"disabled": true`: **excalidraw** (diagrams, requires `EXCALIDRAW_API_KEY`)
 and **datagouv** (public data from data.gouv.fr). Activation and
 confidentiality precautions: see `INSTALL.md`.
 
 ## Security / confidentiality
-- OpenCode is not sandboxed: `bash` commands really execute on the pod.
+- OpenCode is not sandboxed: `shell` commands really execute on the pod.
   The permissions in `opencode.jsonc` allow the usual data science tooling and
   **ask for confirmation** for network, Kubernetes mutations, and deletions.
 - MCP disabled by default (a "remote" MCP would send context off-platform).
@@ -111,11 +133,11 @@ confidentiality precautions: see `INSTALL.md`.
   helper (and `/check-secrets` before committing).
 
 ## Customization
-- Add an agent: new block under `agent` + a prompt in `prompts/`.
+- Add an agent: new block under `agents` (`system` = `{file:./prompts/<name>.md}`) + a prompt in `prompts/`.
 - Add know-how: new folder `.opencode/skills/<name>/SKILL.md`
   (YAML header with `name` + `description` required). Larger skills can bundle
   `references/` (loaded on demand), `scripts/` (executable helpers) and
   `assets/` (copyable templates).
-- Add a command: new file `.opencode/command/<name>.md`.
+- Add a command: new file `.opencode/commands/<name>.md`.
 - The skills follow the Agent Skills standard: skills written for Claude Code
   work as-is, and `./install.sh --claude` exposes these ones to Claude Code.

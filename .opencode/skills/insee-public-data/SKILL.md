@@ -138,7 +138,7 @@ If several analyses will hit the same file, copy it **once** to your S3 bucket
   disabled in `opencode.jsonc`. Enable it per-project (never globally) with an
   `opencode.json` at the repo root:
   ```json
-  { "mcp": { "datagouv": { "type": "remote", "url": "https://mcp.data.gouv.fr/mcp", "enabled": true } } }
+  { "mcp": { "servers": { "datagouv": { "type": "remote", "url": "https://mcp.data.gouv.fr/mcp", "disabled": false } } } }
   ```
   ⚠️ A remote MCP sends conversation context outside the platform — public
   data queries only. Once enabled, use it to search datasets/resources and get

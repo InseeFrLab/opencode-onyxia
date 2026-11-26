@@ -19,8 +19,20 @@ for arg in "$@"; do
   esac
 done
 
+# This config is in the NATIVE opencode v2 format and is not readable by v1.
+if command -v opencode >/dev/null 2>&1; then
+  oc_version="$(opencode --version 2>/dev/null | head -n1 || true)"
+  case "$oc_version" in
+    *v2.*|*" 2."*|2.*) ;;
+    *) echo "⚠ opencode v2 expected, found: ${oc_version:-unknown}." >&2
+       echo "  Install v2:  curl -fsSL https://opencode.ai/v2/install | bash" >&2 ;;
+  esac
+else
+  echo "⚠ opencode not found. Install v2:  curl -fsSL https://opencode.ai/v2/install | bash" >&2
+fi
+
 echo "→ Installing the OpenCode Onyxia config globally into: $DEST"
-mkdir -p "$DEST/prompts" "$DEST/skills" "$DEST/command"
+mkdir -p "$DEST/prompts" "$DEST/skills" "$DEST/commands"
 
 # Back up any existing config (config + AGENTS.md)
 if [ -f "$DEST/opencode.jsonc" ] || [ -f "$DEST/opencode.json" ] || [ -f "$DEST/AGENTS.md" ]; then
@@ -32,14 +44,23 @@ if [ -f "$DEST/opencode.jsonc" ] || [ -f "$DEST/opencode.json" ] || [ -f "$DEST/
   cp -f "$DEST"/AGENTS.md       "$bak/" 2>/dev/null || true
 fi
 
+# v1 used a singular command/ directory. v2 reads both, so a leftover copy
+# would shadow/duplicate the new commands: move it into the backup instead.
+if [ -d "$DEST/command" ]; then
+  bak="${bak:-$DEST/backup-$(date +%Y%m%d-%H%M%S)}"
+  mkdir -p "$bak"
+  echo "  Legacy command/ directory found → moving it to $bak/command"
+  mv "$DEST/command" "$bak/command"
+fi
+
 # Copy: config + context + prompts + skills + commands
 #  (GLOBAL skills live in ~/.config/opencode/skills/, without the .opencode prefix)
 cp -f  "$SRC/opencode.jsonc"        "$DEST/opencode.jsonc"
 cp -f  "$SRC/AGENTS.md"             "$DEST/AGENTS.md"
 cp -rf "$SRC/prompts/."             "$DEST/prompts/"
 cp -rf "$SRC/.opencode/skills/."    "$DEST/skills/"
-if [ -d "$SRC/.opencode/command" ]; then
-  cp -rf "$SRC/.opencode/command/." "$DEST/command/"
+if [ -d "$SRC/.opencode/commands" ]; then
+  cp -rf "$SRC/.opencode/commands/." "$DEST/commands/"
 fi
 
 # Bundled skill scripts must stay executable
