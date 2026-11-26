@@ -15,6 +15,7 @@ opencode-onyxia/
 ├── THIRD_PARTY.md  UPSTREAM.lock  # skills adapted from duckdb/duckdb-skills (MIT) and mlflow/skills (Apache-2.0)
 ├── licenses/                      # upstream licenses
 ├── scripts/vendor_mlflow_skills.py# re-creates the vendored mlflow-* skills from the pinned upstream revision
+├── scripts/check_permissions.py   # model-free test of the permission rules (allow/ask/deny table)
 ├── prompts/                       # one system prompt per agent
 │   ├── build.md  plan.md  python-ds.md  r-ds.md  mlops.md  reviewer.md  dataviz-vision.md
 └── .opencode/
@@ -120,7 +121,7 @@ longer read these files. Things that behave differently from the v1 version of t
 - sampling/thinking → model variants (see above);
 - `compaction.prune` / `tail_turns` no longer exist → `compaction.keep.tokens`;
 - `experimental.continue_loop_on_deny` is ignored by v2;
-- v2 allows paths outside the project by default → an `external_directory: ask` rule restores v1's behaviour;
+- v2 allows paths outside the project by default → `external_directory` asks again, except a short safe set (global skills, `/tmp`, caches);
 - permission actions renamed: `bash` → `shell`, `task` → `subagent`.
 
 Official guide: <https://opencode.ai/docs/migrate-v1/>.
@@ -139,13 +140,45 @@ and **datagouv** (public data from data.gouv.fr). Activation and
 confidentiality precautions: see `INSTALL.md`.
 
 ## Security / confidentiality
-- OpenCode is not sandboxed: `shell` commands really execute on the pod.
-  The permissions in `opencode.jsonc` allow the usual data science tooling and
-  **ask for confirmation** for network, Kubernetes mutations, and deletions.
+- OpenCode is not sandboxed: `shell` commands really execute on the pod. Routine data science work
+  runs **without prompts**; only a short list of dangerous actions asks, and catastrophic ones are blocked
+  outright — see **Permissions** below.
 - MCP disabled by default (a "remote" MCP would send context off-platform).
 - On the public instance, only handle public / non-sensitive data.
 - Never embed a token in a Git remote URL; use `gh auth login` or a credential
   helper (and `/check-secrets` before committing).
+
+## Permissions: only dangerous things ask
+`opencode.jsonc` has three layers (details and the full lists are commented in the file):
+
+| Layer | What it does | Examples |
+|---|---|---|
+| **Baseline** `shell * allow` | Everything routine runs silently | `tail`, `rg`, `jq`, `mkdir`, `cp`, `uv`, `python`, `quarto`, `duckdb`, `aws s3 ls/cp`, `git add/commit`, `kubectl get`, plain `curl` downloads |
+| **Ask** (`permissions`) | A human decides | `rm`, `git push` / `reset --hard` / `clean`, copying to **`diffusion/`** (public to all Onyxia users), `aws s3 mv/sync/presign`, `kubectl apply/exec`, `helm upgrade`, `argo submit`, `vault kv put`, uploads (`curl -d/-F/-T`, `ssh`/`scp`), `env`/`printenv`, dotenv files, paths outside the project (except skills, `/tmp`, caches), unknown websites |
+| **Hard deny** (`policies`) | Blocked without a prompt | `sudo`, `rm -rf` of `/` or `~`, `curl … \| sh`, `eval`, **all remote deletes** (`aws s3 rm/rb`, `mc rm`, `kubectl delete`, `argo delete`, `helm uninstall`, `vault kv delete`), `nc`/`socat`, `~/.ssh` / `~/.gnupg` / `~/.netrc`, editing the global config |
+
+How to work with it:
+- **Policies cannot be overridden** by a project's own `opencode.json`, nor by "Allow always" (the global config outranks
+  project config). A project *can* relax an `ask` for itself, e.g. in its `opencode.json`:
+  `"permissions": [{ "action": "shell", "resource": "kubectl scale *", "effect": "allow" }]`.
+- **Rules match the raw text of each subcommand, and the last matching rule wins.** The shell scanner splits
+  pipelines, `&&`/`;`, subshells, `if …; then` and `$(…)`, but it does not look inside a quoted string and does not
+  unwrap commands: **`env sudo x`, `timeout 5 sudo x`, `nohup …`, `/usr/bin/sudo x`, `xargs sudo` and
+  `bash -c "sudo x"` all slip past a plain `sudo *` pattern** (verified in a live session). So dangerous phrases are
+  substring patterns (`*aws s3 rm*`), single words also match after a space, a slash or a quote, and
+  `bash -c "…"` / `sh -c "…"` **ask** so a human reads the string. Consequences: a standalone word such as `sudo `
+  is blocked even inside a commit message (a known false positive), and `python -c`, scripts, aliases or
+  obfuscation (`r''m`) still get through. Write every new rule in both option forms
+  (`aws s3 rm*` and `aws -* s3 rm*`: `--endpoint-url` before the subcommand is the documented form here).
+- **Do not use `opencode --auto`** with this config: it auto-approves every `ask` (`git push`, publishing to
+  `diffusion/`…); denies and policies still hold.
+- "Allow always" saves project-scoped approvals (lost with an ephemeral service); audit them with
+  `opencode api GET /api/permission/saved`.
+- This is a guard-rail, not a sandbox: patterns cannot see through `/bin/rm`, variables or code (`python script.py`,
+  SQL `COPY … TO 's3://…'`). Platform admins can ship the same `policies` in `/etc/opencode/opencode.json` (highest
+  authority, not editable by users).
+- **Test the rules** after any change (no model needed, ~1 min):
+  `python3 -I scripts/check_permissions.py` (`--ref HEAD~1` replays the table on an older config).
 
 ## Customization
 - Add an agent: new block under `agents` (`system` = `{file:./prompts/<name>.md}`) + a prompt in `prompts/`.
