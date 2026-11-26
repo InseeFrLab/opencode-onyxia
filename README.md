@@ -16,6 +16,7 @@ opencode-onyxia/
 ├── licenses/                      # upstream licenses
 ├── scripts/vendor_mlflow_skills.py# re-creates the vendored mlflow-* skills from the pinned upstream revision
 ├── scripts/check_permissions.py   # model-free test of the permission rules (allow/ask/deny table)
+├── scripts/check_install.py       # tests what `install.sh` and `install.sh --bare` write
 ├── prompts/                       # one system prompt per agent
 │   ├── build.md  plan.md  python-ds.md  r-ds.md  mlops.md  reviewer.md  dataviz-vision.md
 └── .opencode/
@@ -54,6 +55,10 @@ opencode-onyxia/
    It copies the config, `AGENTS.md`, prompts, skills and commands into
    `~/.config/opencode/`. Details and alternatives (manual, Git-tracked,
    per-project overrides) in **`INSTALL.md`**.
+
+   **Only want the models?** `./install.sh --bare` writes just the `onyxia` provider, its models and the default/title
+   models: no agents, permissions, skills, commands or `AGENTS.md` (opencode then runs on its own defaults, so every
+   tool is allowed without a prompt).
 3. **Get an API key** from the Open WebUI gateway
    `https://llm.lab.sspcloud.fr` (Settings → Account → API Keys), then set the
    two environment variables:

@@ -6,6 +6,7 @@
   //  This file is NOT readable by opencode v1 (v1 and v2 share the same config
   //  locations — do not point a v1 install at it).
   //
+  // >>> bare:begin   (`install.sh --bare` copies everything down to `bare:end`: keep these markers)
   //  PROVIDER: self-hosted models exposed by the Onyxia platform.
   //  The gateway is Open WebUI (https://llm.lab.sspcloud.fr): OpenAI-compatible
   //  layer on /api. The base URL and key come from the environment (never
@@ -119,6 +120,7 @@
   // `qwen-36` ("Coder"); this repo deliberately defaults to qwen3-8-27b (see git history).
   // To try another model, declare it under providers.onyxia.models and select it with /models.
   "model": "onyxia/qwen3-8-27b",
+  // <<< bare:end
   // ---- Default agent at startup ----
   "default_agent": "plan",
   // ---- Update policy: notify only (v1 "autoupdate": "notify") ----
@@ -559,10 +561,12 @@
   //  Agent `permissions` are appended AFTER the global ones (last match wins).
   // =========================================================================
   "agents": {
+    // >>> bare-title:begin   (copied by `install.sh --bare`: keep these markers)
     // Session titles: cheap model (v1 "small_model").
     "title": {
       "model": "onyxia/gemma4-26b-moe"
     },
+    // <<< bare-title:end
     "build": {
       "mode": "primary",
       "model": "onyxia/qwen3-8-27b#build",
