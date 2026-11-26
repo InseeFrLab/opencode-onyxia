@@ -1,0 +1,55 @@
+# Renders the Quarto deck in docs/slides and publishes it to GitHub Pages.
+# The deck has no executable cells: figures/ and _variables.yml are generated beforehand by
+# docs/slides/scripts/make_slide_figs.py (from local benchmark data, not in Git) and committed, so CI only needs Quarto.
+# One-time setup: Settings → Pages → Source: "GitHub Actions".
+name: slides
+
+on:
+  push:
+    branches: [main]
+    paths: ["docs/slides/**", ".github/workflows/slides.yml"]
+  pull_request:
+    paths: ["docs/slides/**", ".github/workflows/slides.yml"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: quarto-dev/quarto-actions/setup@v2
+        with:
+          version: 1.10.19   # same as the SSP Cloud images
+      - name: Render
+        working-directory: docs/slides
+        run: quarto render slides.qmd
+      - name: Assemble the site
+        working-directory: docs/slides
+        # embed-resources makes slides.html self-contained, except the favicon linked from raw header HTML
+        run: |
+          mkdir -p _site
+          cp slides.html _site/index.html
+          cp favicon-sspcloud-32x32.png _site/
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: docs/slides/_site
+
+  deploy:
+    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    concurrency:
+      group: pages
+      cancel-in-progress: false
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4

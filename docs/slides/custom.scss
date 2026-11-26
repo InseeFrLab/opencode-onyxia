@@ -1,0 +1,105 @@
+/*-- scss:defaults --*/
+// Le thème Onyxia (extension InseeFrLab/onyxia) fournit police, fond et couleurs de base.
+$presentation-font-size-root: 30px;
+$code-block-font-size: 0.6em;
+
+/*-- scss:rules --*/
+// Palette : bleu = configuré / accent, sarcelle = nu (constants dans tout le diaporama)
+$blue: $sspcloud-blue;   // défini dans sspcloud.scss
+$teal: #0E9F8E;
+$ink: $sspcloud-dark;
+$bg: $sspcloud-light;
+$muted: #5b6070;
+$line: #cfd2dc;
+$wash: #f7f8fb;
+
+.reveal h1 { font-size: 1.9em; }
+.reveal h2 {
+  font-size: 1.3em;
+  padding-bottom: 0.25em;
+  margin-bottom: 0.6em;
+  border-bottom: 3px solid $blue;
+  display: block;
+  text-align: left;
+}
+.reveal section.title-slide h1 { font-size: 1.9em; }
+.reveal section.title-slide .subtitle { color: $muted; font-size: 0.8em; }
+.reveal .title-slide h2 { border: 0; }
+
+// Diapo de section
+.reveal section.level1 > h1 { color: $ink; text-align: left; border-left: 10px solid $blue; padding-left: 0.4em; }
+
+.reveal .small { font-size: 0.78em; }
+.reveal .tiny { font-size: 0.5em; color: $muted; margin-top: 0.8em; }
+.reveal .muted { color: $muted; }
+.reveal .bad { color: $teal; font-weight: 700; }
+.reveal .good { color: $ink; font-weight: 700; }
+.reveal .big { font-size: 1.9em; font-weight: 700; line-height: 1.15; }
+.reveal .joke { color: $muted; font-style: italic; font-size: 0.72em; margin-top: 0.9em; }
+.reveal .joke p { display: inline; }
+.reveal .joke::before { content: "↪ "; font-style: normal; color: $blue; }
+.reveal a { color: $blue; }
+
+// Tableaux : filets fins, sans cadre
+.reveal table { font-size: 0.8em; border-collapse: collapse; margin: 0.4em auto; }
+.reveal table th { border-bottom: 2px solid $ink; text-align: left; font-weight: 700; padding: 0.35em 0.6em; }
+.reveal table td { border-bottom: 1px solid $line; padding: 0.35em 0.6em; }
+
+// Callouts sobres
+.reveal .callout { font-size: 0.8em; border-radius: 6px; box-shadow: none; }
+.reveal .footer { font-size: 0.5em; }
+
+// Tuiles de chiffres
+.stats { display: flex; gap: 0.8em; justify-content: center; margin: 0.6em 0; }
+.stat {
+  flex: 1; background: $wash; border-radius: 10px; padding: 0.7em 0.5em; text-align: center;
+  border-top: 5px solid $blue;
+}
+.stat.o { border-top-color: $teal; }
+.stat .n { font-size: 2.1em; font-weight: 800; line-height: 1.1; display: block; }
+.stat .l { font-size: 0.7em; color: $muted; display: block; margin-top: 0.3em; }
+
+// Pastilles nu / configuré
+.chip { display: inline-block; font-size: 0.55em; font-weight: 700; color: #fff; padding: 0.1em 0.6em;
+  border-radius: 1em; vertical-align: middle; margin-right: 0.5em; }
+.chip.nu { background: $teal; }
+.chip.conf { background: $blue; }
+.chip.opus { background: $muted; }
+
+// Bulles de chat : thème clair, aux couleurs du SSP Cloud
+.reveal .slides-chat {
+  font-size: 0.68em;
+  --slides-chat-bg: #fff;
+  --slides-chat-surface: #{$bg};
+  --slides-chat-code: #{$bg};
+  --slides-chat-fg: #{$ink};
+  --slides-chat-dim: #{$muted};
+  --slides-chat-bright: #{$ink};
+  --slides-chat-prompt: #{$blue};
+  --slides-chat-assistant: #{$blue};
+  --slides-chat-link: #{$blue};
+  --slides-chat-border: #{$line};
+  --slides-chat-code-ink: #{$ink};
+  --slides-chat-inline: #{$blue};
+  --slides-chat-logo: url("data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAzMiAzMiI+PGcgc3Ryb2tlPSIjMzU1OUZDIiBzdHJva2Utd2lkdGg9IjMuNiIgc3Ryb2tlLWxpbmVjYXA9InJvdW5kIj48cGF0aCBkPSJNMTYgM3YyNk0zIDE2aDI2TTYuOCA2LjhsMTguNCAxOC40TTI1LjIgNi44TDYuOCAyNS4yIi8+PC9nPjwvc3ZnPg==");
+  border: 1px solid $line;
+}
+.reveal .slides-chat + .small, .reveal .slides-chat ~ .joke { margin-top: 0.4em; }
+
+// Architecture en HTML
+.arch { display: flex; align-items: stretch; gap: 0.5em; font-size: 0.8em; margin-top: 0.4em; }
+.arch .col { flex: 1; background: $wash; border-radius: 10px; padding: 0.6em 0.8em; }
+.arch .col strong:first-child { display: block; margin-bottom: 0.4em; color: $blue; }
+.arch .col.mid { background: $blue; color: #fff; }
+.arch .col.mid strong:first-child { color: #fff; }
+.arch .col ul { margin: 0; padding-left: 1.1em; }
+.arch .col li { margin: 0.15em 0; }
+.arch .arrow { align-self: center; font-size: 1.6em; color: $muted; }
+
+// Classe héritée d'Onyxia (orange) : neutralisée
+.orange { color: $blue; }
+
+// Chat plus dense (diapo avec deux échanges)
+.reveal .slides-chat.compact { font-size: 0.5em; }
+.reveal .slides-chat.compact pre { margin: 0.3em 0 0; }
+.reveal .slides-chat.compact::after { min-height: 0; }

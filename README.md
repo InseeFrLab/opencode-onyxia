@@ -5,6 +5,8 @@ projects** from OpenCode in the **Onyxia / SSP Cloud** environment, backed by
 the platform's **self-hosted models** (data sent to the agents therefore stays
 within the Insee perimeter).
 
+Slides (French): <https://inseefrlab.github.io/opencode-onyxia/>, the harness and its measured effect.
+
 ## Contents
 ```
 opencode-onyxia/
@@ -15,6 +17,8 @@ opencode-onyxia/
 ├── MANIFEST                       # runtime files shipped in the release tarball
 ├── INSTALL.md                     # detailed install guide
 ├── .github/workflows/release.yml  # checks on PRs; on a v* tag builds and publishes the release tarball
+├── .github/workflows/slides.yml   # renders docs/slides and publishes it to GitHub Pages
+├── docs/slides/                   # Quarto revealjs deck (figures/_variables.yml from scripts/make_slide_figs.py)
 ├── THIRD_PARTY.md  UPSTREAM.lock  # skills adapted from duckdb/duckdb-skills (MIT) and mlflow/skills (Apache-2.0)
 ├── licenses/                      # upstream licenses
 ├── scripts/vendor_mlflow_skills.py# re-creates the vendored mlflow-* skills from the pinned upstream revision
